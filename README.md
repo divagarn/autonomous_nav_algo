@@ -163,3 +163,36 @@ A map folder is: `lanelet2_map.osm`, `pointcloud_map.pcd`, `map_projector_info.y
 * NDT `degraded`/`lost`: raise `voxel_size` (0.5) or lower `ndt_rate_hz` (5), check CPU with `top`.
 * AUTO button greyed: needs a route + converged localisation (+ `--drive` and a running obstacle detector in live).
 * Logs of the calibration helper: `data/calibration_base.log`.
+
+
+## run example:
+
+cd /home/divagar/buggy_ros2/buggy_unified
+./buggy build                 # first time / after changes   (--clean for a fresh build)
+./buggy doctor                # checks software, maps, ECU serial port, LiDAR link
+./buggy maps                  # list maps
+
+# Real buggy
+./buggy live                                   # localization only; never moves the buggy
+./buggy live office_loop1                      # pick a map by folder name
+./buggy live --drive                           # AUTO armed, UART in LOOPBACK (nothing written)
+./buggy live --drive --real                    # AUTO + REAL UART writing (asks you to type YES)
+./buggy live --no-rviz  voxel_size:=0.5  ndt_rate_hz:=5.0  sender_port:=/dev/ttyUSB1
+
+# Brake calibration
+./buggy calibrate-brake --preset 4             # dry run
+./buggy calibrate-brake --preset 4 --live      # really drives, asks YES (repeat 3+ times, also --preset 2)
+
+# New map from Vector Map Builder
+./buggy add-map my_map ~/Downloads/my_map.osm [--pcd /path/file.pcd]
+./buggy live my_map
+
+# Without hardware
+./buggy view [MAP]                             # map + route + simulated AUTO
+./buggy replay /home/divagar/bags/new_delhi_bag_3 --drive
+./buggy sim                                    # Gazebo + emulated ECU
+./buggy sim-map ; ./buggy sim-map --save       # record a sim PCD
+
+./buggy stop                                   # clean Ctrl+C
+./buggy ros2 topic echo /localization/state    # any ros2 command in this environment
+
