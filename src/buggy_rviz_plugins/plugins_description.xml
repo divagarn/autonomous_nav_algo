@@ -1,0 +1,19 @@
+<library path="buggy_rviz_plugins">
+  <class name="buggy_rviz_plugins/BuggyStatePanel"
+         type="buggy_rviz_plugins::BuggyStatePanel"
+         base_class_type="rviz_common::Panel">
+    <description>Vehicle pose, route status and clear-route button.</description>
+  </class>
+  <class name="buggy_rviz_plugins/AddCarTool" type="buggy_rviz_plugins::AddCarTool"
+         base_class_type="rviz_common::Tool">
+    <description>Click-drag on the map to add a dummy car.</description>
+  </class>
+  <class name="buggy_rviz_plugins/AddBusTool" type="buggy_rviz_plugins::AddBusTool"
+         base_class_type="rviz_common::Tool">
+    <description>Click-drag on the map to add a dummy bus.</description>
+  </class>
+  <class name="buggy_rviz_plugins/AddPedestrianTool" type="buggy_rviz_plugins::AddPedestrianTool"
+         base_class_type="rviz_common::Tool">
+    <description>Click-drag on the map to add a dummy pedestrian.</description>
+  </class>
+</library>

@@ -1,0 +1,57 @@
+Panels:
+  - Class: rviz_common/Displays
+    Name: Displays
+Visualization Manager:
+  Class: ""
+  Global Options:
+    Fixed Frame: map
+    Frame Rate: 30
+  Displays:
+    - Class: rviz_default_plugins/Grid
+      Name: Grid
+      Enabled: true
+    - Class: rviz_default_plugins/PointCloud2
+      Name: PointCloud Map
+      Enabled: true
+      Topic:
+        Value: /map/pointcloud_map
+        Durability Policy: Transient Local
+        Reliability Policy: Reliable
+      Style: Points
+      Size (Pixels): 1
+      Color Transformer: AxisColor
+      Axis: Z
+      Use rainbow: true
+    - Class: rviz_default_plugins/MarkerArray
+      Name: Lanelet2 Map
+      Enabled: true
+      Topic:
+        Value: /map/vector_map_marker
+        Durability Policy: Transient Local
+        Reliability Policy: Reliable
+    - Class: rviz_default_plugins/MarkerArray
+      Name: Vehicle
+      Enabled: true
+      Topic:
+        Value: /vehicle/marker
+    - Class: rviz_default_plugins/MarkerArray
+      Name: Route
+      Enabled: true
+      Topic:
+        Value: /planning/route_marker
+        Durability Policy: Transient Local
+        Reliability Policy: Reliable
+  Tools:
+    - Class: rviz_default_plugins/Interact
+    - Class: rviz_default_plugins/MoveCamera
+    - Class: rviz_default_plugins/SetInitialPose
+      Topic:
+        Value: /initialpose
+    - Class: rviz_default_plugins/SetGoal
+      Topic:
+        Value: /goal_pose
+  Views:
+    Current:
+      Class: rviz_default_plugins/TopDownOrtho
+      Scale: 8
+      Target Frame: <Fixed Frame>
