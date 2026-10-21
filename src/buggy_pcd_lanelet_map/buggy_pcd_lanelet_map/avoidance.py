@@ -9,6 +9,12 @@ Geometry (all in Frenet coordinates of the route: s along it, e lateral, + left)
   offset profile  o(s) = 0 -> d (arc S-curve, radius R from the steering limit) -> hold d past the
                   obstacle -> d -> 0. Path point = route(s) + o(s) * left_normal(s).
   d               = (obstacle edge on the passing side) +/- (vehicle half width + side margin).
+If the lane is blocked completely (a barrier across it, a wide vehicle), the detour leaves the lane:
+with LiDAR data the drivable area outside the lane is whatever ground the LiDAR has actually seen and
+found free (solid cells excluded), up to `max_offset` metres from the route; the extent of a barrier
+is taken from the connected solid LiDAR cells, not only from the (corridor-clipped) detected boxes.
+Candidate offsets are tried from the smallest that clears the obstacle outwards in `offset_step` steps.
+
 A candidate is accepted only if its steering demand is within the limit and the whole swept body
 footprint (rear axle frame: x in [-rear, front], y in [-half, half]) stays out of every obstacle
 (inflated), out of occupied LiDAR cells, and inside the drivable area: the lane, or - up to
@@ -36,7 +42,10 @@ class Params:
     lead = 1.0                 # the shift is complete this far before the bumper meets the obstacle
     tail = 0.6                 # rejoin starts this far behind the obstacle's far end (+ rear overhang)
     offlane_allow = 0.8        # drivable outside the lane by this much when there is no LiDAR data
-    offlane_allow_sensed = 2.0  # ... by this much where the LiDAR has seen free ground
+    offlane_allow_sensed = 8.0  # ... by this much where the LiDAR has seen free ground
+    max_offset = 6.5            # largest lateral shift from the route considered
+    offset_step = 0.5
+    ground_fraction = 0.65      # share of out-of-lane body samples that must lie on seen ground
     look_ahead = 40.0
     merge_gap = 8.0            # obstacles closer than this along the route form one zone
 
@@ -60,14 +69,14 @@ class Route:
 
     def to_frenet(self, x, y):
         """(s, e) of world points (arrays)."""
-        x, y = np.atleast_1d(x), np.atleast_1d(y)
-        out_s, out_e = np.empty(len(x)), np.empty(len(x))
-        for k in range(len(x)):
-            j = int(np.argmin((self.p[:, 0] - x[k]) ** 2 + (self.p[:, 1] - y[k]) ** 2))
-            dx, dy = x[k] - self.p[j, 0], y[k] - self.p[j, 1]
-            out_s[k] = self.s[j] + dx * self.tx[j] + dy * self.ty[j]
-            out_e[k] = dx * self.nx[j] + dy * self.ny[j]
-        return out_s, out_e
+        from scipy.spatial import cKDTree
+        if not hasattr(self, '_tree'):
+            self._tree = cKDTree(self.p[:, :2])
+        x, y = np.atleast_1d(x).astype(float), np.atleast_1d(y).astype(float)
+        j = self._tree.query(np.column_stack([x, y]))[1]
+        dx, dy = x - self.p[j, 0], y - self.p[j, 1]
+        return (self.s[j] + dx * self.tx[j] + dy * self.ty[j],
+                dx * self.nx[j] + dy * self.ny[j])
 
 
 def box_corners(x, y, yaw, length, width):
@@ -159,6 +168,41 @@ class FreeSpace:
         return val, ok
 
 
+def barrier_zones(route, free, prm):
+    """Zones from the connected solid LiDAR cells that touch the route corridor: the true extent of a
+    barrier (the detected boxes only cover the part inside the corridor)."""
+    from scipy import ndimage
+    labels, n = ndimage.label(free.occ, structure=np.ones((3, 3)))
+    if n == 0:
+        return []
+    ij = np.argwhere(free.occ)
+    xy = free.origin + (ij + 0.5) * free.res
+    s, e = route.to_frenet(xy[:, 0], xy[:, 1])
+    lab = labels[ij[:, 0], ij[:, 1]]
+    ahead = (s >= 0.0) & (s <= prm.look_ahead + 10.0)
+    touching = ahead & (np.abs(e) <= prm.avoid_half_width)
+    zones = []
+    for k in np.unique(lab[touching]):
+        m = (lab == k) & ahead
+        if m.sum() < 3:
+            continue
+        zones.append({'s0': float(s[m].min()), 's1': float(s[m].max()),
+                      'lo': float(e[m].min()), 'hi': float(e[m].max())})
+    return zones
+
+
+def merge_zones(zones, prm):
+    zones = sorted(zones, key=lambda z: z['s0'])
+    out = []
+    for z in zones:
+        if out and z['s0'] - out[-1]['s1'] < prm.merge_gap:
+            m = out[-1]
+            m['s1'], m['lo'], m['hi'] = max(m['s1'], z['s1']), min(m['lo'], z['lo']), max(m['hi'], z['hi'])
+        else:
+            out.append(dict(z))
+    return out
+
+
 def swept_check(seg, obstacles, lane, free, prm):
     """(ok, reason). seg (N,3) detour points; lane = object with .inside(xy) and .dist(xy), or None."""
     pts = seg[:, :2]
@@ -189,8 +233,8 @@ def swept_check(seg, obstacles, lane, free, prm):
                 return False, f'would leave the lane by more than {limit:.1f} m'
             if sensed:
                 g, known = free.lookup(free.gnd, out)
-                if known.any() and (~g[known]).mean() > 0.35:
-                    return False, 'no ground seen where the detour leaves the lane'
+                if (~g).mean() > 1.0 - prm.ground_fraction:
+                    return False, 'the LiDAR has not seen free ground where the detour leaves the lane'
     return True, ''
 
 
@@ -200,37 +244,48 @@ def plan_detour(points, obstacles, lane=None, free=None, prm=None):
     prm = prm or Params()
     route = Route(points)
     zones = zones_on_route(route, obstacles, prm)
+    if free is not None:
+        zones = merge_zones(zones + barrier_zones(route, free, prm), prm)
     if not zones:
         return {'ok': False, 'reason': 'no obstacle on the route ahead'}
     z = zones[0]
     clr = prm.veh_half_width + prm.side_margin
     R0 = prm.wheelbase / math.tan(math.radians(prm.max_steer_deg * prm.steer_frac))
     best, why = None, []
-    for side, d in (('left', z['hi'] + clr), ('right', z['lo'] - clr)):
-        last = ''
-        # a gentler arc turns the body less (its front swings out less) but needs more room before
-        # the obstacle: try the sharpest allowed arc first, then ever gentler ones
-        for k in (1.0, 1.4, 2.0, 2.8, 4.0):
-            R = R0 * k
-            built = build_detour(route, z, d, R, prm)
-            if built is None:
-                last = last or 'the route ends before the vehicle could rejoin it'
+    for side, d0 in (('left', z['hi'] + clr), ('right', z['lo'] - clr)):
+        last, sign = '', (1.0 if d0 > 0 else -1.0)
+        # smallest shift that clears the obstacle first, then wider ones (a blocked lane may only have
+        # free space further out); for each, the sharpest allowed arc first, then ever gentler ones
+        # (turn the body less, but need more room before the obstacle)
+        n_off = int(max(0.0, prm.max_offset - abs(d0)) / prm.offset_step) + 1
+        for step in range(n_off):
+            d = d0 + sign * prm.offset_step * step
+            for k in (1.0, 1.4, 2.0, 2.8, 4.0):
+                R = R0 * k
+                built = build_detour(route, z, d, R, prm)
+                if built is None:
+                    last = last or 'the route ends before the vehicle could rejoin it'
+                    break
+                seg, ib, L, s_a0 = built
+                if max_steer_deg(list(map(tuple, seg)), prm.wheelbase) > prm.max_steer_deg * prm.check_steer_frac:
+                    last = 'needs more steering than the buggy has'
+                    continue
+                ok, reason = swept_check(seg, obstacles, lane, free, prm)
+                if not ok:
+                    last = reason
+                    continue
+                best_side = {'ok': True, 'side': side, 'offset': float(d), 'segment': seg.tolist(),
+                             'ib': ib, 'length': float(route.s[ib - 1]), 'shift_length': float(L),
+                             'radius': float(R), 'room_before': float(z['s0'] - prm.front),
+                             'outside_lane': bool(lane is not None and not lane.inside(seg[:, :2]).all())}
+                last = ''
                 break
-            seg, ib, L, s_a0 = built
-            if max_steer_deg(list(map(tuple, seg)), prm.wheelbase) > prm.max_steer_deg * prm.check_steer_frac:
-                last = 'needs more steering than the buggy has'
-                continue
-            ok, reason = swept_check(seg, obstacles, lane, free, prm)
-            if not ok:
-                last = reason
-                continue
-            cand = {'ok': True, 'side': side, 'offset': float(d), 'segment': seg.tolist(), 'ib': ib,
-                    'length': float(route.s[ib - 1]), 'shift_length': float(L), 'radius': float(R),
-                    'room_before': float(z['s0'] - prm.front)}
-            if best is None or abs(d) < abs(best['offset']):
-                best = cand
-            last = ''
-            break
+            if not last:
+                if best is None or abs(d) < abs(best['offset']):
+                    best = best_side
+                break
+            if built is None:
+                break
         if last:
             why.append(f'{side}: {last}')
     if best is not None:

@@ -208,7 +208,9 @@ def launch_setup(context):
             package='buggy_pcd_lanelet_map', executable='avoidance_planner',
             name='avoidance_planner', output='screen',
             parameters=[{'lanelet2_map_path': osm,
-                         'use_sensors': LaunchConfiguration('live').perform(context).lower() == 'true'},
+                         'use_sensors': (LaunchConfiguration('live').perform(context).lower() == 'true'
+                                         if LaunchConfiguration('avoid_use_sensors').perform(context) == 'auto'
+                                         else LaunchConfiguration('avoid_use_sensors').perform(context).lower() == 'true')},
                         sim_time]))
     if splash_node is None:
         return nodes + rviz
@@ -234,6 +236,8 @@ def generate_launch_description():
         DeclareLaunchArgument('map_display_voxel', default_value='0.3',
                               description='RViz shows a copy of the map thinned to one point per this '
                                           'voxel [m] (0 = full map); stops the map shimmering'),
+        DeclareLaunchArgument('avoid_use_sensors', default_value='auto',
+                              description='detour planner uses the LiDAR free space: auto = in live mode only'),
         DeclareLaunchArgument('avoidance', default_value='false',
                               description='go around an obstacle that blocks the lane for >5 s'),
         DeclareLaunchArgument('radar', default_value='false'),

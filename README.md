@@ -154,6 +154,16 @@ Limits to know:
 * a **tight curve** or a **narrow lane** (3.2 m lane, 0.6 m pedestrian: ~1.4 m shift) often leaves no room:
   on `small_loop` the planner found a detour for a pedestrian at 5 of 16 positions with lane-only data;
 * a **car** (1.8 m wide) in a 3.2 m lane needs ~2.4 m outside the lane: only possible with LiDAR confirmation;
+* **Lane completely blocked** (a barrier or wide vehicle across it): with LiDAR data the detour leaves the lane
+  into the free space the LiDAR has actually seen - ground that was seen (>= 65 % of the body samples that fall
+  outside the lane) and no solid cell - up to `max_offset_m` (6.5 m) from the route, passes the end of the
+  obstacle and returns to the lane. The extent of the barrier comes from the connected solid LiDAR cells, not
+  only from the detected boxes (which are clipped to the corridor). Wider offsets are tried in 0.5 m steps, on
+  both sides, the smallest first. Tested with a synthetic LiDAR world (bus 10.5 m across the lane: detour 6.6 m
+  around its end, back on the route within 0.14 m); **not yet with real VLP-16 data**. The VLP-16's ground
+  returns are sparse at range (rings ~0.7 m apart at 10 m) and nothing is seen behind the obstacle, so the
+  ground check may need tuning (`ground_fraction`, ground dilation). In `view` there is no LiDAR: pass
+  `avoid_use_sensors:=true` together with something that publishes `/non_ground_points_filtered` and `/ground_points`;
 * it never reverses and does not look for a different lanelet (no lane change / re-route).
 
 ### RViz window: maximised and resizable

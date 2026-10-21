@@ -62,7 +62,8 @@ class AvoidancePlanner(Node):
             side_margin=p('side_margin', 0.35).value,
             avoid_half_width=p('avoid_corridor_half_width', 1.05).value,
             offlane_allow=p('offlane_allow_m', 0.8).value,
-            offlane_allow_sensed=p('offlane_allow_sensed_m', 2.0).value)
+            offlane_allow_sensed=p('offlane_allow_sensed_m', 8.0).value,
+            max_offset=p('max_offset_m', 6.5).value)
         self.lane = LaneModel(load_lanelets(osm)) if osm else None
         self.tf = Buffer()
         TransformListener(self.tf, self)
@@ -107,8 +108,8 @@ class AvoidancePlanner(Node):
         """FreeSpace from the recent scans around the route, or None without LiDAR data."""
         if not self.use_sensors or not self.nonground or not self.ground:
             return None
-        lo = pts[:, :2].min(axis=0) - 6.0
-        hi = pts[:, :2].max(axis=0) + 6.0
+        lo = pts[:, :2].min(axis=0) - 10.0
+        hi = pts[:, :2].max(axis=0) + 10.0
         shape = np.ceil((hi - lo) / self.res).astype(int) + 1
 
         def grid(store, grow):
@@ -118,7 +119,8 @@ class AvoidancePlanner(Node):
                 ok = (ij[:, 0] >= 0) & (ij[:, 1] >= 0) & (ij[:, 0] < shape[0]) & (ij[:, 1] < shape[1])
                 g[ij[ok, 0], ij[ok, 1]] = True
             return ndimage.binary_dilation(g, iterations=grow) if grow else g
-        return FreeSpace(lo, self.res, grid(self.nonground, 1), grid(self.ground, 2))
+        # ground is dilated more: the VLP-16 rings are ~0.7 m apart at 10 m, the gaps are not holes
+        return FreeSpace(lo, self.res, grid(self.nonground, 1), grid(self.ground, 3))
 
     def on_request(self, msg):
         t0 = time.time()
