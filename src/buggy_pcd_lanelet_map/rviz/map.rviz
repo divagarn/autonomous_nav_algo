@@ -41,6 +41,11 @@ Visualization Manager:
         Value: /planning/route_marker
         Durability Policy: Transient Local
         Reliability Policy: Reliable
+    - Class: rviz_default_plugins/MarkerArray
+      Name: Stop / Slow Zones
+      Enabled: true
+      Topic:
+        Value: /planning/stop_zone_marker
   Tools:
     - Class: rviz_default_plugins/Interact
     - Class: rviz_default_plugins/MoveCamera

@@ -42,7 +42,7 @@ BuggyStatePanel::BuggyStatePanel(QWidget * parent)
   status_form->addRow("Speed / Progress", progress_label_);
   status_form->addRow("Steering / CTE", steering_label_);
   status_form->addRow("Drive output", drive_label_);
-  status_form->addRow("Obstacle detector", safety_label_);
+  status_form->addRow("Sensors", safety_label_);
   auto * status_box = new QGroupBox("Status");
   status_box->setLayout(status_form);
 
@@ -177,9 +177,12 @@ void BuggyStatePanel::setState(const QString & text)
     QString("act %1 / cmd %2 deg (+right)  /  CTE %3 m")
     .arg(kv.value("steering"), kv.value("cmd_steer"), kv.value("cte")));
   drive_label_->setText(kv.value("drive"));
-  safety_label_->setText(QString("%1, %2 object(s)").arg(kv.value("detector"), kv.value("objects")));
+  safety_label_->setText(
+    kv.contains("sensors") ?
+    QString("%1  =>  %2 obstacle(s)").arg(kv.value("sensors"), kv.value("objects")) :
+    QString("%1, %2 object(s)").arg(kv.value("detector"), kv.value("objects")));
   safety_label_->setToolTip("Stop model: " + kv.value("stop_model"));
-  safety_label_->setStyleSheet(kv.value("detector") == "STALE" ? "color: #c62828; font-weight: bold;" : "");
+  safety_label_->setStyleSheet((kv.value("detector") == "STALE" || kv.value("sensors").contains("STALE")) ? "color: #c62828; font-weight: bold;" : "");
   drive_label_->setStyleSheet(
     kv.value("drive").startsWith("ARMED") ? "color: #c62828; font-weight: bold;" : "");
   message_label_->setText(kv.value("msg"));

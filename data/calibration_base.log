@@ -1,0 +1,526 @@
+[INFO] [launch]: All log files can be found below /home/divagar/.ros/log/2026-10-21-10-58-33-504140-SRMLAP1041-43315
+[INFO] [launch]: Default logging verbosity is set to INFO
+[INFO] [uart_bridge-1]: process started with pid [43318]
+[INFO] [wheel_odometry-2]: process started with pid [43320]
+[INFO] [uart_writer-3]: process started with pid [43322]
+[uart_bridge-1] [FATAL] [1792560513.738821368] [uart_bridge]: UART open failed: [Errno 2] could not open port /dev/ttyUSB0: [Errno 2] No such file or directory: '/dev/ttyUSB0'
+[uart_writer-3] 2026-10-21 10:58:33,764 - INFO - Loopback mode - not opening UART port /dev/ttyUSB0
+[uart_writer-3] [WARN] [1792560513.782544363] [uart_writer]: uart_writer on /dev/ttyUSB0: LOOPBACK (nothing is written)
+[uart_writer-3] [WARN] [1792560513.869678978] [uart_writer]: commands fresh again
+[uart_writer-3] 2026-10-21 10:58:33,869 - INFO - Message packet (hex): 2800010bb829
+[uart_writer-3] 2026-10-21 10:58:33,869 - INFO - Message packet (ascii): (\x00\x01\x0b\xb8)
+[uart_writer-3] 2026-10-21 10:58:33,870 - INFO - Loopback mode - not writing to the serial port
+[wheel_odometry-2] [INFO] [1792560513.871416580] [wheel_odometry]: Wheel odometry integrator initialized (wheelbase=1.6m, dead-reckoning from /wheel_uart -> /odom + no TF (publish_tf=false))
+[INFO] [uart_bridge-1]: process has finished cleanly [pid 43318]
+[uart_writer-3] 2026-10-21 10:58:33,969 - INFO - Message packet (hex): 2800010bb829
+[uart_writer-3] 2026-10-21 10:58:33,969 - INFO - Message packet (ascii): (\x00\x01\x0b\xb8)
+[uart_writer-3] 2026-10-21 10:58:33,969 - INFO - Loopback mode - not writing to the serial port
+[uart_writer-3] 2026-10-21 10:58:34,070 - INFO - Message packet (hex): 2800010bb829
+[uart_writer-3] 2026-10-21 10:58:34,070 - INFO - Message packet (ascii): (\x00\x01\x0b\xb8)
+[uart_writer-3] 2026-10-21 10:58:34,070 - INFO - Loopback mode - not writing to the serial port
+[uart_writer-3] 2026-10-21 10:58:34,169 - INFO - Message packet (hex): 2800010bb829
+[uart_writer-3] 2026-10-21 10:58:34,169 - INFO - Message packet (ascii): (\x00\x01\x0b\xb8)
+[uart_writer-3] 2026-10-21 10:58:34,169 - INFO - Loopback mode - not writing to the serial port
+[uart_writer-3] [WARN] [1792560514.270190621] [uart_writer]: commands STALE - forcing STOP
+[uart_writer-3] 2026-10-21 10:58:34,270 - INFO - Message packet (hex): 2800010bb829
+[uart_writer-3] 2026-10-21 10:58:34,270 - INFO - Message packet (ascii): (\x00\x01\x0b\xb8)
+[uart_writer-3] 2026-10-21 10:58:34,270 - INFO - Loopback mode - not writing to the serial port
+[uart_writer-3] 2026-10-21 10:58:34,369 - INFO - Message packet (hex): 2800010bb829
+[uart_writer-3] 2026-10-21 10:58:34,369 - INFO - Message packet (ascii): (\x00\x01\x0b\xb8)
+[uart_writer-3] 2026-10-21 10:58:34,369 - INFO - Loopback mode - not writing to the serial port
+[uart_writer-3] 2026-10-21 10:58:34,469 - INFO - Message packet (hex): 2800010bb829
+[uart_writer-3] 2026-10-21 10:58:34,469 - INFO - Message packet (ascii): (\x00\x01\x0b\xb8)
+[uart_writer-3] 2026-10-21 10:58:34,469 - INFO - Loopback mode - not writing to the serial port
+[uart_writer-3] 2026-10-21 10:58:34,569 - INFO - Message packet (hex): 2800010bb829
+[uart_writer-3] 2026-10-21 10:58:34,569 - INFO - Message packet (ascii): (\x00\x01\x0b\xb8)
+[uart_writer-3] 2026-10-21 10:58:34,569 - INFO - Loopback mode - not writing to the serial port
+[uart_writer-3] 2026-10-21 10:58:34,669 - INFO - Message packet (hex): 2800010bb829
+[uart_writer-3] 2026-10-21 10:58:34,669 - INFO - Message packet (ascii): (\x00\x01\x0b\xb8)
+[uart_writer-3] 2026-10-21 10:58:34,669 - INFO - Loopback mode - not writing to the serial port
+[uart_writer-3] 2026-10-21 10:58:34,769 - INFO - Message packet (hex): 2800010bb829
+[uart_writer-3] 2026-10-21 10:58:34,769 - INFO - Message packet (ascii): (\x00\x01\x0b\xb8)
+[uart_writer-3] 2026-10-21 10:58:34,769 - INFO - Loopback mode - not writing to the serial port
+[uart_writer-3] 2026-10-21 10:58:34,869 - INFO - Message packet (hex): 2800010bb829
+[uart_writer-3] 2026-10-21 10:58:34,869 - INFO - Message packet (ascii): (\x00\x01\x0b\xb8)
+[uart_writer-3] 2026-10-21 10:58:34,869 - INFO - Loopback mode - not writing to the serial port
+[uart_writer-3] 2026-10-21 10:58:34,969 - INFO - Message packet (hex): 2800010bb829
+[uart_writer-3] 2026-10-21 10:58:34,969 - INFO - Message packet (ascii): (\x00\x01\x0b\xb8)
+[uart_writer-3] 2026-10-21 10:58:34,969 - INFO - Loopback mode - not writing to the serial port
+[uart_writer-3] 2026-10-21 10:58:35,069 - INFO - Message packet (hex): 2800010bb829
+[uart_writer-3] 2026-10-21 10:58:35,069 - INFO - Message packet (ascii): (\x00\x01\x0b\xb8)
+[uart_writer-3] 2026-10-21 10:58:35,069 - INFO - Loopback mode - not writing to the serial port
+[uart_writer-3] 2026-10-21 10:58:35,169 - INFO - Message packet (hex): 2800010bb829
+[uart_writer-3] 2026-10-21 10:58:35,169 - INFO - Message packet (ascii): (\x00\x01\x0b\xb8)
+[uart_writer-3] 2026-10-21 10:58:35,169 - INFO - Loopback mode - not writing to the serial port
+[uart_writer-3] 2026-10-21 10:58:35,269 - INFO - Message packet (hex): 2800010bb829
+[uart_writer-3] 2026-10-21 10:58:35,269 - INFO - Message packet (ascii): (\x00\x01\x0b\xb8)
+[uart_writer-3] 2026-10-21 10:58:35,269 - INFO - Loopback mode - not writing to the serial port
+[uart_writer-3] 2026-10-21 10:58:35,369 - INFO - Message packet (hex): 2800010bb829
+[uart_writer-3] 2026-10-21 10:58:35,369 - INFO - Message packet (ascii): (\x00\x01\x0b\xb8)
+[uart_writer-3] 2026-10-21 10:58:35,369 - INFO - Loopback mode - not writing to the serial port
+[uart_writer-3] 2026-10-21 10:58:35,469 - INFO - Message packet (hex): 2800010bb829
+[uart_writer-3] 2026-10-21 10:58:35,469 - INFO - Message packet (ascii): (\x00\x01\x0b\xb8)
+[uart_writer-3] 2026-10-21 10:58:35,469 - INFO - Loopback mode - not writing to the serial port
+[uart_writer-3] 2026-10-21 10:58:35,569 - INFO - Message packet (hex): 2800010bb829
+[uart_writer-3] 2026-10-21 10:58:35,569 - INFO - Message packet (ascii): (\x00\x01\x0b\xb8)
+[uart_writer-3] 2026-10-21 10:58:35,569 - INFO - Loopback mode - not writing to the serial port
+[uart_writer-3] 2026-10-21 10:58:35,669 - INFO - Message packet (hex): 2800010bb829
+[uart_writer-3] 2026-10-21 10:58:35,669 - INFO - Message packet (ascii): (\x00\x01\x0b\xb8)
+[uart_writer-3] 2026-10-21 10:58:35,669 - INFO - Loopback mode - not writing to the serial port
+[uart_writer-3] 2026-10-21 10:58:35,769 - INFO - Message packet (hex): 2800010bb829
+[uart_writer-3] 2026-10-21 10:58:35,769 - INFO - Message packet (ascii): (\x00\x01\x0b\xb8)
+[uart_writer-3] 2026-10-21 10:58:35,769 - INFO - Loopback mode - not writing to the serial port
+[uart_writer-3] 2026-10-21 10:58:35,869 - INFO - Message packet (hex): 2800010bb829
+[uart_writer-3] 2026-10-21 10:58:35,869 - INFO - Message packet (ascii): (\x00\x01\x0b\xb8)
+[uart_writer-3] 2026-10-21 10:58:35,869 - INFO - Loopback mode - not writing to the serial port
+[uart_writer-3] 2026-10-21 10:58:35,969 - INFO - Message packet (hex): 2800010bb829
+[uart_writer-3] 2026-10-21 10:58:35,969 - INFO - Message packet (ascii): (\x00\x01\x0b\xb8)
+[uart_writer-3] 2026-10-21 10:58:35,969 - INFO - Loopback mode - not writing to the serial port
+[uart_writer-3] 2026-10-21 10:58:36,069 - INFO - Message packet (hex): 2800010bb829
+[uart_writer-3] 2026-10-21 10:58:36,069 - INFO - Message packet (ascii): (\x00\x01\x0b\xb8)
+[uart_writer-3] 2026-10-21 10:58:36,069 - INFO - Loopback mode - not writing to the serial port
+[uart_writer-3] 2026-10-21 10:58:36,169 - INFO - Message packet (hex): 2800010bb829
+[uart_writer-3] 2026-10-21 10:58:36,169 - INFO - Message packet (ascii): (\x00\x01\x0b\xb8)
+[uart_writer-3] 2026-10-21 10:58:36,169 - INFO - Loopback mode - not writing to the serial port
+[uart_writer-3] 2026-10-21 10:58:36,269 - INFO - Message packet (hex): 2800010bb829
+[uart_writer-3] 2026-10-21 10:58:36,269 - INFO - Message packet (ascii): (\x00\x01\x0b\xb8)
+[uart_writer-3] 2026-10-21 10:58:36,269 - INFO - Loopback mode - not writing to the serial port
+[uart_writer-3] 2026-10-21 10:58:36,369 - INFO - Message packet (hex): 2800010bb829
+[uart_writer-3] 2026-10-21 10:58:36,369 - INFO - Message packet (ascii): (\x00\x01\x0b\xb8)
+[uart_writer-3] 2026-10-21 10:58:36,369 - INFO - Loopback mode - not writing to the serial port
+[uart_writer-3] 2026-10-21 10:58:36,469 - INFO - Message packet (hex): 2800010bb829
+[uart_writer-3] 2026-10-21 10:58:36,469 - INFO - Message packet (ascii): (\x00\x01\x0b\xb8)
+[uart_writer-3] 2026-10-21 10:58:36,469 - INFO - Loopback mode - not writing to the serial port
+[uart_writer-3] 2026-10-21 10:58:36,569 - INFO - Message packet (hex): 2800010bb829
+[uart_writer-3] 2026-10-21 10:58:36,569 - INFO - Message packet (ascii): (\x00\x01\x0b\xb8)
+[uart_writer-3] 2026-10-21 10:58:36,569 - INFO - Loopback mode - not writing to the serial port
+[uart_writer-3] 2026-10-21 10:58:36,669 - INFO - Message packet (hex): 2800010bb829
+[uart_writer-3] 2026-10-21 10:58:36,669 - INFO - Message packet (ascii): (\x00\x01\x0b\xb8)
+[uart_writer-3] 2026-10-21 10:58:36,669 - INFO - Loopback mode - not writing to the serial port
+[uart_writer-3] 2026-10-21 10:58:36,769 - INFO - Message packet (hex): 2800010bb829
+[uart_writer-3] 2026-10-21 10:58:36,769 - INFO - Message packet (ascii): (\x00\x01\x0b\xb8)
+[uart_writer-3] 2026-10-21 10:58:36,769 - INFO - Loopback mode - not writing to the serial port
+[uart_writer-3] 2026-10-21 10:58:36,869 - INFO - Message packet (hex): 2800010bb829
+[uart_writer-3] 2026-10-21 10:58:36,869 - INFO - Message packet (ascii): (\x00\x01\x0b\xb8)
+[uart_writer-3] 2026-10-21 10:58:36,869 - INFO - Loopback mode - not writing to the serial port
+[uart_writer-3] 2026-10-21 10:58:36,969 - INFO - Message packet (hex): 2800010bb829
+[uart_writer-3] 2026-10-21 10:58:36,969 - INFO - Message packet (ascii): (\x00\x01\x0b\xb8)
+[uart_writer-3] 2026-10-21 10:58:36,969 - INFO - Loopback mode - not writing to the serial port
+[uart_writer-3] 2026-10-21 10:58:37,069 - INFO - Message packet (hex): 2800010bb829
+[uart_writer-3] 2026-10-21 10:58:37,069 - INFO - Message packet (ascii): (\x00\x01\x0b\xb8)
+[uart_writer-3] 2026-10-21 10:58:37,069 - INFO - Loopback mode - not writing to the serial port
+[uart_writer-3] 2026-10-21 10:58:37,169 - INFO - Message packet (hex): 2800010bb829
+[uart_writer-3] 2026-10-21 10:58:37,169 - INFO - Message packet (ascii): (\x00\x01\x0b\xb8)
+[uart_writer-3] 2026-10-21 10:58:37,169 - INFO - Loopback mode - not writing to the serial port
+[uart_writer-3] 2026-10-21 10:58:37,269 - INFO - Message packet (hex): 2800010bb829
+[uart_writer-3] 2026-10-21 10:58:37,269 - INFO - Message packet (ascii): (\x00\x01\x0b\xb8)
+[uart_writer-3] 2026-10-21 10:58:37,269 - INFO - Loopback mode - not writing to the serial port
+[uart_writer-3] 2026-10-21 10:58:37,369 - INFO - Message packet (hex): 2800010bb829
+[uart_writer-3] 2026-10-21 10:58:37,369 - INFO - Message packet (ascii): (\x00\x01\x0b\xb8)
+[uart_writer-3] 2026-10-21 10:58:37,369 - INFO - Loopback mode - not writing to the serial port
+[uart_writer-3] 2026-10-21 10:58:37,469 - INFO - Message packet (hex): 2800010bb829
+[uart_writer-3] 2026-10-21 10:58:37,469 - INFO - Message packet (ascii): (\x00\x01\x0b\xb8)
+[uart_writer-3] 2026-10-21 10:58:37,469 - INFO - Loopback mode - not writing to the serial port
+[uart_writer-3] 2026-10-21 10:58:37,569 - INFO - Message packet (hex): 2800010bb829
+[uart_writer-3] 2026-10-21 10:58:37,569 - INFO - Message packet (ascii): (\x00\x01\x0b\xb8)
+[uart_writer-3] 2026-10-21 10:58:37,569 - INFO - Loopback mode - not writing to the serial port
+[uart_writer-3] 2026-10-21 10:58:37,669 - INFO - Message packet (hex): 2800010bb829
+[uart_writer-3] 2026-10-21 10:58:37,669 - INFO - Message packet (ascii): (\x00\x01\x0b\xb8)
+[uart_writer-3] 2026-10-21 10:58:37,669 - INFO - Loopback mode - not writing to the serial port
+[uart_writer-3] 2026-10-21 10:58:37,769 - INFO - Message packet (hex): 2800010bb829
+[uart_writer-3] 2026-10-21 10:58:37,769 - INFO - Message packet (ascii): (\x00\x01\x0b\xb8)
+[uart_writer-3] 2026-10-21 10:58:37,770 - INFO - Loopback mode - not writing to the serial port
+[uart_writer-3] 2026-10-21 10:58:37,869 - INFO - Message packet (hex): 2800010bb829
+[uart_writer-3] 2026-10-21 10:58:37,869 - INFO - Message packet (ascii): (\x00\x01\x0b\xb8)
+[uart_writer-3] 2026-10-21 10:58:37,869 - INFO - Loopback mode - not writing to the serial port
+[uart_writer-3] 2026-10-21 10:58:37,969 - INFO - Message packet (hex): 2800010bb829
+[uart_writer-3] 2026-10-21 10:58:37,969 - INFO - Message packet (ascii): (\x00\x01\x0b\xb8)
+[uart_writer-3] 2026-10-21 10:58:37,969 - INFO - Loopback mode - not writing to the serial port
+[uart_writer-3] 2026-10-21 10:58:38,069 - INFO - Message packet (hex): 2800010bb829
+[uart_writer-3] 2026-10-21 10:58:38,069 - INFO - Message packet (ascii): (\x00\x01\x0b\xb8)
+[uart_writer-3] 2026-10-21 10:58:38,069 - INFO - Loopback mode - not writing to the serial port
+[uart_writer-3] 2026-10-21 10:58:38,169 - INFO - Message packet (hex): 2800010bb829
+[uart_writer-3] 2026-10-21 10:58:38,169 - INFO - Message packet (ascii): (\x00\x01\x0b\xb8)
+[uart_writer-3] 2026-10-21 10:58:38,169 - INFO - Loopback mode - not writing to the serial port
+[uart_writer-3] 2026-10-21 10:58:38,269 - INFO - Message packet (hex): 2800010bb829
+[uart_writer-3] 2026-10-21 10:58:38,269 - INFO - Message packet (ascii): (\x00\x01\x0b\xb8)
+[uart_writer-3] 2026-10-21 10:58:38,270 - INFO - Loopback mode - not writing to the serial port
+[uart_writer-3] 2026-10-21 10:58:38,369 - INFO - Message packet (hex): 2800010bb829
+[uart_writer-3] 2026-10-21 10:58:38,369 - INFO - Message packet (ascii): (\x00\x01\x0b\xb8)
+[uart_writer-3] 2026-10-21 10:58:38,369 - INFO - Loopback mode - not writing to the serial port
+[uart_writer-3] 2026-10-21 10:58:38,469 - INFO - Message packet (hex): 2800010bb829
+[uart_writer-3] 2026-10-21 10:58:38,469 - INFO - Message packet (ascii): (\x00\x01\x0b\xb8)
+[uart_writer-3] 2026-10-21 10:58:38,469 - INFO - Loopback mode - not writing to the serial port
+[uart_writer-3] 2026-10-21 10:58:38,569 - INFO - Message packet (hex): 2800010bb829
+[uart_writer-3] 2026-10-21 10:58:38,569 - INFO - Message packet (ascii): (\x00\x01\x0b\xb8)
+[uart_writer-3] 2026-10-21 10:58:38,569 - INFO - Loopback mode - not writing to the serial port
+[uart_writer-3] 2026-10-21 10:58:38,669 - INFO - Message packet (hex): 2800010bb829
+[uart_writer-3] 2026-10-21 10:58:38,669 - INFO - Message packet (ascii): (\x00\x01\x0b\xb8)
+[uart_writer-3] 2026-10-21 10:58:38,669 - INFO - Loopback mode - not writing to the serial port
+[uart_writer-3] 2026-10-21 10:58:38,769 - INFO - Message packet (hex): 2800010bb829
+[uart_writer-3] 2026-10-21 10:58:38,769 - INFO - Message packet (ascii): (\x00\x01\x0b\xb8)
+[uart_writer-3] 2026-10-21 10:58:38,769 - INFO - Loopback mode - not writing to the serial port
+[uart_writer-3] 2026-10-21 10:58:38,869 - INFO - Message packet (hex): 2800010bb829
+[uart_writer-3] 2026-10-21 10:58:38,869 - INFO - Message packet (ascii): (\x00\x01\x0b\xb8)
+[uart_writer-3] 2026-10-21 10:58:38,869 - INFO - Loopback mode - not writing to the serial port
+[uart_writer-3] 2026-10-21 10:58:38,969 - INFO - Message packet (hex): 2800010bb829
+[uart_writer-3] 2026-10-21 10:58:38,969 - INFO - Message packet (ascii): (\x00\x01\x0b\xb8)
+[uart_writer-3] 2026-10-21 10:58:38,970 - INFO - Loopback mode - not writing to the serial port
+[uart_writer-3] 2026-10-21 10:58:39,069 - INFO - Message packet (hex): 2800010bb829
+[uart_writer-3] 2026-10-21 10:58:39,069 - INFO - Message packet (ascii): (\x00\x01\x0b\xb8)
+[uart_writer-3] 2026-10-21 10:58:39,069 - INFO - Loopback mode - not writing to the serial port
+[uart_writer-3] 2026-10-21 10:58:39,169 - INFO - Message packet (hex): 2800010bb829
+[uart_writer-3] 2026-10-21 10:58:39,169 - INFO - Message packet (ascii): (\x00\x01\x0b\xb8)
+[uart_writer-3] 2026-10-21 10:58:39,169 - INFO - Loopback mode - not writing to the serial port
+[uart_writer-3] 2026-10-21 10:58:39,269 - INFO - Message packet (hex): 2800010bb829
+[uart_writer-3] 2026-10-21 10:58:39,269 - INFO - Message packet (ascii): (\x00\x01\x0b\xb8)
+[uart_writer-3] 2026-10-21 10:58:39,269 - INFO - Loopback mode - not writing to the serial port
+[uart_writer-3] 2026-10-21 10:58:39,369 - INFO - Message packet (hex): 2800010bb829
+[uart_writer-3] 2026-10-21 10:58:39,369 - INFO - Message packet (ascii): (\x00\x01\x0b\xb8)
+[uart_writer-3] 2026-10-21 10:58:39,369 - INFO - Loopback mode - not writing to the serial port
+[uart_writer-3] 2026-10-21 10:58:39,468 - INFO - Message packet (hex): 2800010bb829
+[uart_writer-3] 2026-10-21 10:58:39,468 - INFO - Message packet (ascii): (\x00\x01\x0b\xb8)
+[uart_writer-3] 2026-10-21 10:58:39,468 - INFO - Loopback mode - not writing to the serial port
+[uart_writer-3] 2026-10-21 10:58:39,569 - INFO - Message packet (hex): 2800010bb829
+[uart_writer-3] 2026-10-21 10:58:39,569 - INFO - Message packet (ascii): (\x00\x01\x0b\xb8)
+[uart_writer-3] 2026-10-21 10:58:39,569 - INFO - Loopback mode - not writing to the serial port
+[uart_writer-3] 2026-10-21 10:58:39,669 - INFO - Message packet (hex): 2800010bb829
+[uart_writer-3] 2026-10-21 10:58:39,669 - INFO - Message packet (ascii): (\x00\x01\x0b\xb8)
+[uart_writer-3] 2026-10-21 10:58:39,669 - INFO - Loopback mode - not writing to the serial port
+[uart_writer-3] 2026-10-21 10:58:39,769 - INFO - Message packet (hex): 2800010bb829
+[uart_writer-3] 2026-10-21 10:58:39,769 - INFO - Message packet (ascii): (\x00\x01\x0b\xb8)
+[uart_writer-3] 2026-10-21 10:58:39,769 - INFO - Loopback mode - not writing to the serial port
+[uart_writer-3] 2026-10-21 10:58:39,869 - INFO - Message packet (hex): 2800010bb829
+[uart_writer-3] 2026-10-21 10:58:39,869 - INFO - Message packet (ascii): (\x00\x01\x0b\xb8)
+[uart_writer-3] 2026-10-21 10:58:39,869 - INFO - Loopback mode - not writing to the serial port
+[uart_writer-3] 2026-10-21 10:58:39,969 - INFO - Message packet (hex): 2800010bb829
+[uart_writer-3] 2026-10-21 10:58:39,969 - INFO - Message packet (ascii): (\x00\x01\x0b\xb8)
+[uart_writer-3] 2026-10-21 10:58:39,969 - INFO - Loopback mode - not writing to the serial port
+[uart_writer-3] 2026-10-21 10:58:40,069 - INFO - Message packet (hex): 2800010bb829
+[uart_writer-3] 2026-10-21 10:58:40,069 - INFO - Message packet (ascii): (\x00\x01\x0b\xb8)
+[uart_writer-3] 2026-10-21 10:58:40,070 - INFO - Loopback mode - not writing to the serial port
+[uart_writer-3] 2026-10-21 10:58:40,169 - INFO - Message packet (hex): 2800010bb829
+[uart_writer-3] 2026-10-21 10:58:40,169 - INFO - Message packet (ascii): (\x00\x01\x0b\xb8)
+[uart_writer-3] 2026-10-21 10:58:40,169 - INFO - Loopback mode - not writing to the serial port
+[uart_writer-3] 2026-10-21 10:58:40,269 - INFO - Message packet (hex): 2800010bb829
+[uart_writer-3] 2026-10-21 10:58:40,269 - INFO - Message packet (ascii): (\x00\x01\x0b\xb8)
+[uart_writer-3] 2026-10-21 10:58:40,269 - INFO - Loopback mode - not writing to the serial port
+[uart_writer-3] 2026-10-21 10:58:40,369 - INFO - Message packet (hex): 2800010bb829
+[uart_writer-3] 2026-10-21 10:58:40,369 - INFO - Message packet (ascii): (\x00\x01\x0b\xb8)
+[uart_writer-3] 2026-10-21 10:58:40,369 - INFO - Loopback mode - not writing to the serial port
+[uart_writer-3] 2026-10-21 10:58:40,469 - INFO - Message packet (hex): 2800010bb829
+[uart_writer-3] 2026-10-21 10:58:40,469 - INFO - Message packet (ascii): (\x00\x01\x0b\xb8)
+[uart_writer-3] 2026-10-21 10:58:40,469 - INFO - Loopback mode - not writing to the serial port
+[uart_writer-3] 2026-10-21 10:58:40,569 - INFO - Message packet (hex): 2800010bb829
+[uart_writer-3] 2026-10-21 10:58:40,569 - INFO - Message packet (ascii): (\x00\x01\x0b\xb8)
+[uart_writer-3] 2026-10-21 10:58:40,569 - INFO - Loopback mode - not writing to the serial port
+[uart_writer-3] 2026-10-21 10:58:40,669 - INFO - Message packet (hex): 2800010bb829
+[uart_writer-3] 2026-10-21 10:58:40,669 - INFO - Message packet (ascii): (\x00\x01\x0b\xb8)
+[uart_writer-3] 2026-10-21 10:58:40,669 - INFO - Loopback mode - not writing to the serial port
+[uart_writer-3] 2026-10-21 10:58:40,769 - INFO - Message packet (hex): 2800010bb829
+[uart_writer-3] 2026-10-21 10:58:40,769 - INFO - Message packet (ascii): (\x00\x01\x0b\xb8)
+[uart_writer-3] 2026-10-21 10:58:40,770 - INFO - Loopback mode - not writing to the serial port
+[uart_writer-3] 2026-10-21 10:58:40,869 - INFO - Message packet (hex): 2800010bb829
+[uart_writer-3] 2026-10-21 10:58:40,869 - INFO - Message packet (ascii): (\x00\x01\x0b\xb8)
+[uart_writer-3] 2026-10-21 10:58:40,869 - INFO - Loopback mode - not writing to the serial port
+[uart_writer-3] 2026-10-21 10:58:40,969 - INFO - Message packet (hex): 2800010bb829
+[uart_writer-3] 2026-10-21 10:58:40,969 - INFO - Message packet (ascii): (\x00\x01\x0b\xb8)
+[uart_writer-3] 2026-10-21 10:58:40,969 - INFO - Loopback mode - not writing to the serial port
+[uart_writer-3] 2026-10-21 10:58:41,068 - INFO - Message packet (hex): 2800010bb829
+[uart_writer-3] 2026-10-21 10:58:41,069 - INFO - Message packet (ascii): (\x00\x01\x0b\xb8)
+[uart_writer-3] 2026-10-21 10:58:41,069 - INFO - Loopback mode - not writing to the serial port
+[uart_writer-3] 2026-10-21 10:58:41,169 - INFO - Message packet (hex): 2800010bb829
+[uart_writer-3] 2026-10-21 10:58:41,169 - INFO - Message packet (ascii): (\x00\x01\x0b\xb8)
+[uart_writer-3] 2026-10-21 10:58:41,169 - INFO - Loopback mode - not writing to the serial port
+[uart_writer-3] 2026-10-21 10:58:41,269 - INFO - Message packet (hex): 2800010bb829
+[uart_writer-3] 2026-10-21 10:58:41,269 - INFO - Message packet (ascii): (\x00\x01\x0b\xb8)
+[uart_writer-3] 2026-10-21 10:58:41,269 - INFO - Loopback mode - not writing to the serial port
+[uart_writer-3] 2026-10-21 10:58:41,369 - INFO - Message packet (hex): 2800010bb829
+[uart_writer-3] 2026-10-21 10:58:41,369 - INFO - Message packet (ascii): (\x00\x01\x0b\xb8)
+[uart_writer-3] 2026-10-21 10:58:41,369 - INFO - Loopback mode - not writing to the serial port
+[uart_writer-3] 2026-10-21 10:58:41,469 - INFO - Message packet (hex): 2800010bb829
+[uart_writer-3] 2026-10-21 10:58:41,469 - INFO - Message packet (ascii): (\x00\x01\x0b\xb8)
+[uart_writer-3] 2026-10-21 10:58:41,469 - INFO - Loopback mode - not writing to the serial port
+[uart_writer-3] 2026-10-21 10:58:41,569 - INFO - Message packet (hex): 2800010bb829
+[uart_writer-3] 2026-10-21 10:58:41,569 - INFO - Message packet (ascii): (\x00\x01\x0b\xb8)
+[uart_writer-3] 2026-10-21 10:58:41,569 - INFO - Loopback mode - not writing to the serial port
+[uart_writer-3] 2026-10-21 10:58:41,669 - INFO - Message packet (hex): 2800010bb829
+[uart_writer-3] 2026-10-21 10:58:41,669 - INFO - Message packet (ascii): (\x00\x01\x0b\xb8)
+[uart_writer-3] 2026-10-21 10:58:41,669 - INFO - Loopback mode - not writing to the serial port
+[uart_writer-3] 2026-10-21 10:58:41,769 - INFO - Message packet (hex): 2800010bb829
+[uart_writer-3] 2026-10-21 10:58:41,769 - INFO - Message packet (ascii): (\x00\x01\x0b\xb8)
+[uart_writer-3] 2026-10-21 10:58:41,769 - INFO - Loopback mode - not writing to the serial port
+[uart_writer-3] 2026-10-21 10:58:41,869 - INFO - Message packet (hex): 2800010bb829
+[uart_writer-3] 2026-10-21 10:58:41,869 - INFO - Message packet (ascii): (\x00\x01\x0b\xb8)
+[uart_writer-3] 2026-10-21 10:58:41,869 - INFO - Loopback mode - not writing to the serial port
+[uart_writer-3] 2026-10-21 10:58:41,969 - INFO - Message packet (hex): 2800010bb829
+[uart_writer-3] 2026-10-21 10:58:41,969 - INFO - Message packet (ascii): (\x00\x01\x0b\xb8)
+[uart_writer-3] 2026-10-21 10:58:41,969 - INFO - Loopback mode - not writing to the serial port
+[uart_writer-3] 2026-10-21 10:58:42,069 - INFO - Message packet (hex): 2800010bb829
+[uart_writer-3] 2026-10-21 10:58:42,069 - INFO - Message packet (ascii): (\x00\x01\x0b\xb8)
+[uart_writer-3] 2026-10-21 10:58:42,069 - INFO - Loopback mode - not writing to the serial port
+[uart_writer-3] 2026-10-21 10:58:42,169 - INFO - Message packet (hex): 2800010bb829
+[uart_writer-3] 2026-10-21 10:58:42,169 - INFO - Message packet (ascii): (\x00\x01\x0b\xb8)
+[uart_writer-3] 2026-10-21 10:58:42,169 - INFO - Loopback mode - not writing to the serial port
+[uart_writer-3] 2026-10-21 10:58:42,269 - INFO - Message packet (hex): 2800010bb829
+[uart_writer-3] 2026-10-21 10:58:42,269 - INFO - Message packet (ascii): (\x00\x01\x0b\xb8)
+[uart_writer-3] 2026-10-21 10:58:42,269 - INFO - Loopback mode - not writing to the serial port
+[uart_writer-3] 2026-10-21 10:58:42,369 - INFO - Message packet (hex): 2800010bb829
+[uart_writer-3] 2026-10-21 10:58:42,369 - INFO - Message packet (ascii): (\x00\x01\x0b\xb8)
+[uart_writer-3] 2026-10-21 10:58:42,369 - INFO - Loopback mode - not writing to the serial port
+[uart_writer-3] 2026-10-21 10:58:42,469 - INFO - Message packet (hex): 2800010bb829
+[uart_writer-3] 2026-10-21 10:58:42,469 - INFO - Message packet (ascii): (\x00\x01\x0b\xb8)
+[uart_writer-3] 2026-10-21 10:58:42,469 - INFO - Loopback mode - not writing to the serial port
+[uart_writer-3] 2026-10-21 10:58:42,569 - INFO - Message packet (hex): 2800010bb829
+[uart_writer-3] 2026-10-21 10:58:42,569 - INFO - Message packet (ascii): (\x00\x01\x0b\xb8)
+[uart_writer-3] 2026-10-21 10:58:42,569 - INFO - Loopback mode - not writing to the serial port
+[uart_writer-3] 2026-10-21 10:58:42,669 - INFO - Message packet (hex): 2800010bb829
+[uart_writer-3] 2026-10-21 10:58:42,669 - INFO - Message packet (ascii): (\x00\x01\x0b\xb8)
+[uart_writer-3] 2026-10-21 10:58:42,669 - INFO - Loopback mode - not writing to the serial port
+[uart_writer-3] 2026-10-21 10:58:42,769 - INFO - Message packet (hex): 2800010bb829
+[uart_writer-3] 2026-10-21 10:58:42,769 - INFO - Message packet (ascii): (\x00\x01\x0b\xb8)
+[uart_writer-3] 2026-10-21 10:58:42,769 - INFO - Loopback mode - not writing to the serial port
+[uart_writer-3] 2026-10-21 10:58:42,869 - INFO - Message packet (hex): 2800010bb829
+[uart_writer-3] 2026-10-21 10:58:42,869 - INFO - Message packet (ascii): (\x00\x01\x0b\xb8)
+[uart_writer-3] 2026-10-21 10:58:42,869 - INFO - Loopback mode - not writing to the serial port
+[uart_writer-3] 2026-10-21 10:58:42,969 - INFO - Message packet (hex): 2800010bb829
+[uart_writer-3] 2026-10-21 10:58:42,969 - INFO - Message packet (ascii): (\x00\x01\x0b\xb8)
+[uart_writer-3] 2026-10-21 10:58:42,969 - INFO - Loopback mode - not writing to the serial port
+[uart_writer-3] 2026-10-21 10:58:43,069 - INFO - Message packet (hex): 2800010bb829
+[uart_writer-3] 2026-10-21 10:58:43,069 - INFO - Message packet (ascii): (\x00\x01\x0b\xb8)
+[uart_writer-3] 2026-10-21 10:58:43,069 - INFO - Loopback mode - not writing to the serial port
+[uart_writer-3] 2026-10-21 10:58:43,169 - INFO - Message packet (hex): 2800010bb829
+[uart_writer-3] 2026-10-21 10:58:43,169 - INFO - Message packet (ascii): (\x00\x01\x0b\xb8)
+[uart_writer-3] 2026-10-21 10:58:43,169 - INFO - Loopback mode - not writing to the serial port
+[uart_writer-3] 2026-10-21 10:58:43,269 - INFO - Message packet (hex): 2800010bb829
+[uart_writer-3] 2026-10-21 10:58:43,269 - INFO - Message packet (ascii): (\x00\x01\x0b\xb8)
+[uart_writer-3] 2026-10-21 10:58:43,269 - INFO - Loopback mode - not writing to the serial port
+[uart_writer-3] 2026-10-21 10:58:43,369 - INFO - Message packet (hex): 2800010bb829
+[uart_writer-3] 2026-10-21 10:58:43,369 - INFO - Message packet (ascii): (\x00\x01\x0b\xb8)
+[uart_writer-3] 2026-10-21 10:58:43,369 - INFO - Loopback mode - not writing to the serial port
+[uart_writer-3] 2026-10-21 10:58:43,469 - INFO - Message packet (hex): 2800010bb829
+[uart_writer-3] 2026-10-21 10:58:43,469 - INFO - Message packet (ascii): (\x00\x01\x0b\xb8)
+[uart_writer-3] 2026-10-21 10:58:43,469 - INFO - Loopback mode - not writing to the serial port
+[uart_writer-3] 2026-10-21 10:58:43,569 - INFO - Message packet (hex): 2800010bb829
+[uart_writer-3] 2026-10-21 10:58:43,569 - INFO - Message packet (ascii): (\x00\x01\x0b\xb8)
+[uart_writer-3] 2026-10-21 10:58:43,570 - INFO - Loopback mode - not writing to the serial port
+[uart_writer-3] 2026-10-21 10:58:43,669 - INFO - Message packet (hex): 2800010bb829
+[uart_writer-3] 2026-10-21 10:58:43,669 - INFO - Message packet (ascii): (\x00\x01\x0b\xb8)
+[uart_writer-3] 2026-10-21 10:58:43,669 - INFO - Loopback mode - not writing to the serial port
+[uart_writer-3] 2026-10-21 10:58:43,769 - INFO - Message packet (hex): 2800010bb829
+[uart_writer-3] 2026-10-21 10:58:43,769 - INFO - Message packet (ascii): (\x00\x01\x0b\xb8)
+[uart_writer-3] 2026-10-21 10:58:43,769 - INFO - Loopback mode - not writing to the serial port
+[uart_writer-3] 2026-10-21 10:58:43,869 - INFO - Message packet (hex): 2800010bb829
+[uart_writer-3] 2026-10-21 10:58:43,869 - INFO - Message packet (ascii): (\x00\x01\x0b\xb8)
+[uart_writer-3] 2026-10-21 10:58:43,869 - INFO - Loopback mode - not writing to the serial port
+[uart_writer-3] 2026-10-21 10:58:43,969 - INFO - Message packet (hex): 2800010bb829
+[uart_writer-3] 2026-10-21 10:58:43,969 - INFO - Message packet (ascii): (\x00\x01\x0b\xb8)
+[uart_writer-3] 2026-10-21 10:58:43,969 - INFO - Loopback mode - not writing to the serial port
+[uart_writer-3] 2026-10-21 10:58:44,069 - INFO - Message packet (hex): 2800010bb829
+[uart_writer-3] 2026-10-21 10:58:44,069 - INFO - Message packet (ascii): (\x00\x01\x0b\xb8)
+[uart_writer-3] 2026-10-21 10:58:44,069 - INFO - Loopback mode - not writing to the serial port
+[uart_writer-3] 2026-10-21 10:58:44,169 - INFO - Message packet (hex): 2800010bb829
+[uart_writer-3] 2026-10-21 10:58:44,170 - INFO - Message packet (ascii): (\x00\x01\x0b\xb8)
+[uart_writer-3] 2026-10-21 10:58:44,170 - INFO - Loopback mode - not writing to the serial port
+[uart_writer-3] 2026-10-21 10:58:44,269 - INFO - Message packet (hex): 2800010bb829
+[uart_writer-3] 2026-10-21 10:58:44,269 - INFO - Message packet (ascii): (\x00\x01\x0b\xb8)
+[uart_writer-3] 2026-10-21 10:58:44,270 - INFO - Loopback mode - not writing to the serial port
+[uart_writer-3] 2026-10-21 10:58:44,369 - INFO - Message packet (hex): 2800010bb829
+[uart_writer-3] 2026-10-21 10:58:44,369 - INFO - Message packet (ascii): (\x00\x01\x0b\xb8)
+[uart_writer-3] 2026-10-21 10:58:44,369 - INFO - Loopback mode - not writing to the serial port
+[uart_writer-3] 2026-10-21 10:58:44,469 - INFO - Message packet (hex): 2800010bb829
+[uart_writer-3] 2026-10-21 10:58:44,469 - INFO - Message packet (ascii): (\x00\x01\x0b\xb8)
+[uart_writer-3] 2026-10-21 10:58:44,469 - INFO - Loopback mode - not writing to the serial port
+[uart_writer-3] 2026-10-21 10:58:44,569 - INFO - Message packet (hex): 2800010bb829
+[uart_writer-3] 2026-10-21 10:58:44,569 - INFO - Message packet (ascii): (\x00\x01\x0b\xb8)
+[uart_writer-3] 2026-10-21 10:58:44,569 - INFO - Loopback mode - not writing to the serial port
+[uart_writer-3] 2026-10-21 10:58:44,669 - INFO - Message packet (hex): 2800010bb829
+[uart_writer-3] 2026-10-21 10:58:44,669 - INFO - Message packet (ascii): (\x00\x01\x0b\xb8)
+[uart_writer-3] 2026-10-21 10:58:44,669 - INFO - Loopback mode - not writing to the serial port
+[uart_writer-3] 2026-10-21 10:58:44,769 - INFO - Message packet (hex): 2800010bb829
+[uart_writer-3] 2026-10-21 10:58:44,769 - INFO - Message packet (ascii): (\x00\x01\x0b\xb8)
+[uart_writer-3] 2026-10-21 10:58:44,769 - INFO - Loopback mode - not writing to the serial port
+[uart_writer-3] 2026-10-21 10:58:44,869 - INFO - Message packet (hex): 2800010bb829
+[uart_writer-3] 2026-10-21 10:58:44,869 - INFO - Message packet (ascii): (\x00\x01\x0b\xb8)
+[uart_writer-3] 2026-10-21 10:58:44,869 - INFO - Loopback mode - not writing to the serial port
+[uart_writer-3] 2026-10-21 10:58:44,969 - INFO - Message packet (hex): 2800010bb829
+[uart_writer-3] 2026-10-21 10:58:44,969 - INFO - Message packet (ascii): (\x00\x01\x0b\xb8)
+[uart_writer-3] 2026-10-21 10:58:44,969 - INFO - Loopback mode - not writing to the serial port
+[uart_writer-3] 2026-10-21 10:58:45,069 - INFO - Message packet (hex): 2800010bb829
+[uart_writer-3] 2026-10-21 10:58:45,069 - INFO - Message packet (ascii): (\x00\x01\x0b\xb8)
+[uart_writer-3] 2026-10-21 10:58:45,069 - INFO - Loopback mode - not writing to the serial port
+[uart_writer-3] 2026-10-21 10:58:45,169 - INFO - Message packet (hex): 2800010bb829
+[uart_writer-3] 2026-10-21 10:58:45,169 - INFO - Message packet (ascii): (\x00\x01\x0b\xb8)
+[uart_writer-3] 2026-10-21 10:58:45,169 - INFO - Loopback mode - not writing to the serial port
+[uart_writer-3] 2026-10-21 10:58:45,269 - INFO - Message packet (hex): 2800010bb829
+[uart_writer-3] 2026-10-21 10:58:45,269 - INFO - Message packet (ascii): (\x00\x01\x0b\xb8)
+[uart_writer-3] 2026-10-21 10:58:45,269 - INFO - Loopback mode - not writing to the serial port
+[uart_writer-3] 2026-10-21 10:58:45,369 - INFO - Message packet (hex): 2800010bb829
+[uart_writer-3] 2026-10-21 10:58:45,369 - INFO - Message packet (ascii): (\x00\x01\x0b\xb8)
+[uart_writer-3] 2026-10-21 10:58:45,369 - INFO - Loopback mode - not writing to the serial port
+[uart_writer-3] 2026-10-21 10:58:45,469 - INFO - Message packet (hex): 2800010bb829
+[uart_writer-3] 2026-10-21 10:58:45,469 - INFO - Message packet (ascii): (\x00\x01\x0b\xb8)
+[uart_writer-3] 2026-10-21 10:58:45,469 - INFO - Loopback mode - not writing to the serial port
+[uart_writer-3] 2026-10-21 10:58:45,569 - INFO - Message packet (hex): 2800010bb829
+[uart_writer-3] 2026-10-21 10:58:45,569 - INFO - Message packet (ascii): (\x00\x01\x0b\xb8)
+[uart_writer-3] 2026-10-21 10:58:45,569 - INFO - Loopback mode - not writing to the serial port
+[uart_writer-3] 2026-10-21 10:58:45,669 - INFO - Message packet (hex): 2800010bb829
+[uart_writer-3] 2026-10-21 10:58:45,669 - INFO - Message packet (ascii): (\x00\x01\x0b\xb8)
+[uart_writer-3] 2026-10-21 10:58:45,669 - INFO - Loopback mode - not writing to the serial port
+[uart_writer-3] 2026-10-21 10:58:45,769 - INFO - Message packet (hex): 2800010bb829
+[uart_writer-3] 2026-10-21 10:58:45,769 - INFO - Message packet (ascii): (\x00\x01\x0b\xb8)
+[uart_writer-3] 2026-10-21 10:58:45,769 - INFO - Loopback mode - not writing to the serial port
+[uart_writer-3] 2026-10-21 10:58:45,869 - INFO - Message packet (hex): 2800010bb829
+[uart_writer-3] 2026-10-21 10:58:45,869 - INFO - Message packet (ascii): (\x00\x01\x0b\xb8)
+[uart_writer-3] 2026-10-21 10:58:45,869 - INFO - Loopback mode - not writing to the serial port
+[uart_writer-3] 2026-10-21 10:58:45,969 - INFO - Message packet (hex): 2800010bb829
+[uart_writer-3] 2026-10-21 10:58:45,969 - INFO - Message packet (ascii): (\x00\x01\x0b\xb8)
+[uart_writer-3] 2026-10-21 10:58:45,969 - INFO - Loopback mode - not writing to the serial port
+[uart_writer-3] 2026-10-21 10:58:46,069 - INFO - Message packet (hex): 2800010bb829
+[uart_writer-3] 2026-10-21 10:58:46,069 - INFO - Message packet (ascii): (\x00\x01\x0b\xb8)
+[uart_writer-3] 2026-10-21 10:58:46,069 - INFO - Loopback mode - not writing to the serial port
+[uart_writer-3] 2026-10-21 10:58:46,169 - INFO - Message packet (hex): 2800010bb829
+[uart_writer-3] 2026-10-21 10:58:46,169 - INFO - Message packet (ascii): (\x00\x01\x0b\xb8)
+[uart_writer-3] 2026-10-21 10:58:46,169 - INFO - Loopback mode - not writing to the serial port
+[uart_writer-3] 2026-10-21 10:58:46,269 - INFO - Message packet (hex): 2800010bb829
+[uart_writer-3] 2026-10-21 10:58:46,269 - INFO - Message packet (ascii): (\x00\x01\x0b\xb8)
+[uart_writer-3] 2026-10-21 10:58:46,269 - INFO - Loopback mode - not writing to the serial port
+[uart_writer-3] 2026-10-21 10:58:46,369 - INFO - Message packet (hex): 2800010bb829
+[uart_writer-3] 2026-10-21 10:58:46,369 - INFO - Message packet (ascii): (\x00\x01\x0b\xb8)
+[uart_writer-3] 2026-10-21 10:58:46,369 - INFO - Loopback mode - not writing to the serial port
+[uart_writer-3] 2026-10-21 10:58:46,468 - INFO - Message packet (hex): 2800010bb829
+[uart_writer-3] 2026-10-21 10:58:46,469 - INFO - Message packet (ascii): (\x00\x01\x0b\xb8)
+[uart_writer-3] 2026-10-21 10:58:46,469 - INFO - Loopback mode - not writing to the serial port
+[uart_writer-3] 2026-10-21 10:58:46,569 - INFO - Message packet (hex): 2800010bb829
+[uart_writer-3] 2026-10-21 10:58:46,569 - INFO - Message packet (ascii): (\x00\x01\x0b\xb8)
+[uart_writer-3] 2026-10-21 10:58:46,569 - INFO - Loopback mode - not writing to the serial port
+[uart_writer-3] 2026-10-21 10:58:46,669 - INFO - Message packet (hex): 2800010bb829
+[uart_writer-3] 2026-10-21 10:58:46,669 - INFO - Message packet (ascii): (\x00\x01\x0b\xb8)
+[uart_writer-3] 2026-10-21 10:58:46,669 - INFO - Loopback mode - not writing to the serial port
+[uart_writer-3] 2026-10-21 10:58:46,769 - INFO - Message packet (hex): 2800010bb829
+[uart_writer-3] 2026-10-21 10:58:46,769 - INFO - Message packet (ascii): (\x00\x01\x0b\xb8)
+[uart_writer-3] 2026-10-21 10:58:46,769 - INFO - Loopback mode - not writing to the serial port
+[uart_writer-3] 2026-10-21 10:58:46,869 - INFO - Message packet (hex): 2800010bb829
+[uart_writer-3] 2026-10-21 10:58:46,869 - INFO - Message packet (ascii): (\x00\x01\x0b\xb8)
+[uart_writer-3] 2026-10-21 10:58:46,869 - INFO - Loopback mode - not writing to the serial port
+[uart_writer-3] 2026-10-21 10:58:46,969 - INFO - Message packet (hex): 2800010bb829
+[uart_writer-3] 2026-10-21 10:58:46,969 - INFO - Message packet (ascii): (\x00\x01\x0b\xb8)
+[uart_writer-3] 2026-10-21 10:58:46,969 - INFO - Loopback mode - not writing to the serial port
+[uart_writer-3] 2026-10-21 10:58:47,069 - INFO - Message packet (hex): 2800010bb829
+[uart_writer-3] 2026-10-21 10:58:47,069 - INFO - Message packet (ascii): (\x00\x01\x0b\xb8)
+[uart_writer-3] 2026-10-21 10:58:47,069 - INFO - Loopback mode - not writing to the serial port
+[uart_writer-3] 2026-10-21 10:58:47,169 - INFO - Message packet (hex): 2800010bb829
+[uart_writer-3] 2026-10-21 10:58:47,169 - INFO - Message packet (ascii): (\x00\x01\x0b\xb8)
+[uart_writer-3] 2026-10-21 10:58:47,169 - INFO - Loopback mode - not writing to the serial port
+[uart_writer-3] 2026-10-21 10:58:47,269 - INFO - Message packet (hex): 2800010bb829
+[uart_writer-3] 2026-10-21 10:58:47,269 - INFO - Message packet (ascii): (\x00\x01\x0b\xb8)
+[uart_writer-3] 2026-10-21 10:58:47,269 - INFO - Loopback mode - not writing to the serial port
+[uart_writer-3] 2026-10-21 10:58:47,369 - INFO - Message packet (hex): 2800010bb829
+[uart_writer-3] 2026-10-21 10:58:47,369 - INFO - Message packet (ascii): (\x00\x01\x0b\xb8)
+[uart_writer-3] 2026-10-21 10:58:47,369 - INFO - Loopback mode - not writing to the serial port
+[uart_writer-3] 2026-10-21 10:58:47,469 - INFO - Message packet (hex): 2800010bb829
+[uart_writer-3] 2026-10-21 10:58:47,469 - INFO - Message packet (ascii): (\x00\x01\x0b\xb8)
+[uart_writer-3] 2026-10-21 10:58:47,469 - INFO - Loopback mode - not writing to the serial port
+[uart_writer-3] 2026-10-21 10:58:47,569 - INFO - Message packet (hex): 2800010bb829
+[uart_writer-3] 2026-10-21 10:58:47,569 - INFO - Message packet (ascii): (\x00\x01\x0b\xb8)
+[uart_writer-3] 2026-10-21 10:58:47,569 - INFO - Loopback mode - not writing to the serial port
+[uart_writer-3] 2026-10-21 10:58:47,669 - INFO - Message packet (hex): 2800010bb829
+[uart_writer-3] 2026-10-21 10:58:47,669 - INFO - Message packet (ascii): (\x00\x01\x0b\xb8)
+[uart_writer-3] 2026-10-21 10:58:47,669 - INFO - Loopback mode - not writing to the serial port
+[uart_writer-3] 2026-10-21 10:58:47,769 - INFO - Message packet (hex): 2800010bb829
+[uart_writer-3] 2026-10-21 10:58:47,769 - INFO - Message packet (ascii): (\x00\x01\x0b\xb8)
+[uart_writer-3] 2026-10-21 10:58:47,769 - INFO - Loopback mode - not writing to the serial port
+[uart_writer-3] 2026-10-21 10:58:47,869 - INFO - Message packet (hex): 2800010bb829
+[uart_writer-3] 2026-10-21 10:58:47,869 - INFO - Message packet (ascii): (\x00\x01\x0b\xb8)
+[uart_writer-3] 2026-10-21 10:58:47,869 - INFO - Loopback mode - not writing to the serial port
+[uart_writer-3] 2026-10-21 10:58:47,969 - INFO - Message packet (hex): 2800010bb829
+[uart_writer-3] 2026-10-21 10:58:47,969 - INFO - Message packet (ascii): (\x00\x01\x0b\xb8)
+[uart_writer-3] 2026-10-21 10:58:47,969 - INFO - Loopback mode - not writing to the serial port
+[uart_writer-3] 2026-10-21 10:58:48,069 - INFO - Message packet (hex): 2800010bb829
+[uart_writer-3] 2026-10-21 10:58:48,069 - INFO - Message packet (ascii): (\x00\x01\x0b\xb8)
+[uart_writer-3] 2026-10-21 10:58:48,069 - INFO - Loopback mode - not writing to the serial port
+[uart_writer-3] 2026-10-21 10:58:48,169 - INFO - Message packet (hex): 2800010bb829
+[uart_writer-3] 2026-10-21 10:58:48,169 - INFO - Message packet (ascii): (\x00\x01\x0b\xb8)
+[uart_writer-3] 2026-10-21 10:58:48,169 - INFO - Loopback mode - not writing to the serial port
+[uart_writer-3] 2026-10-21 10:58:48,269 - INFO - Message packet (hex): 2800010bb829
+[uart_writer-3] 2026-10-21 10:58:48,269 - INFO - Message packet (ascii): (\x00\x01\x0b\xb8)
+[uart_writer-3] 2026-10-21 10:58:48,269 - INFO - Loopback mode - not writing to the serial port
+[uart_writer-3] 2026-10-21 10:58:48,369 - INFO - Message packet (hex): 2800010bb829
+[uart_writer-3] 2026-10-21 10:58:48,369 - INFO - Message packet (ascii): (\x00\x01\x0b\xb8)
+[uart_writer-3] 2026-10-21 10:58:48,369 - INFO - Loopback mode - not writing to the serial port
+[uart_writer-3] 2026-10-21 10:58:48,469 - INFO - Message packet (hex): 2800010bb829
+[uart_writer-3] 2026-10-21 10:58:48,469 - INFO - Message packet (ascii): (\x00\x01\x0b\xb8)
+[uart_writer-3] 2026-10-21 10:58:48,469 - INFO - Loopback mode - not writing to the serial port
+[uart_writer-3] 2026-10-21 10:58:48,569 - INFO - Message packet (hex): 2800010bb829
+[uart_writer-3] 2026-10-21 10:58:48,569 - INFO - Message packet (ascii): (\x00\x01\x0b\xb8)
+[uart_writer-3] 2026-10-21 10:58:48,569 - INFO - Loopback mode - not writing to the serial port
+[uart_writer-3] 2026-10-21 10:58:48,669 - INFO - Message packet (hex): 2800010bb829
+[uart_writer-3] 2026-10-21 10:58:48,669 - INFO - Message packet (ascii): (\x00\x01\x0b\xb8)
+[uart_writer-3] 2026-10-21 10:58:48,669 - INFO - Loopback mode - not writing to the serial port
+[uart_writer-3] 2026-10-21 10:58:48,769 - INFO - Message packet (hex): 2800010bb829
+[uart_writer-3] 2026-10-21 10:58:48,769 - INFO - Message packet (ascii): (\x00\x01\x0b\xb8)
+[uart_writer-3] 2026-10-21 10:58:48,770 - INFO - Loopback mode - not writing to the serial port
+[uart_writer-3] 2026-10-21 10:58:48,869 - INFO - Message packet (hex): 2800010bb829
+[uart_writer-3] 2026-10-21 10:58:48,869 - INFO - Message packet (ascii): (\x00\x01\x0b\xb8)
+[uart_writer-3] 2026-10-21 10:58:48,869 - INFO - Loopback mode - not writing to the serial port
+[uart_writer-3] 2026-10-21 10:58:48,969 - INFO - Message packet (hex): 2800010bb829
+[uart_writer-3] 2026-10-21 10:58:48,969 - INFO - Message packet (ascii): (\x00\x01\x0b\xb8)
+[uart_writer-3] 2026-10-21 10:58:48,969 - INFO - Loopback mode - not writing to the serial port
+[uart_writer-3] 2026-10-21 10:58:49,069 - INFO - Message packet (hex): 2800010bb829
+[uart_writer-3] 2026-10-21 10:58:49,069 - INFO - Message packet (ascii): (\x00\x01\x0b\xb8)
+[uart_writer-3] 2026-10-21 10:58:49,069 - INFO - Loopback mode - not writing to the serial port
+[uart_writer-3] 2026-10-21 10:58:49,169 - INFO - Message packet (hex): 2800010bb829
+[uart_writer-3] 2026-10-21 10:58:49,169 - INFO - Message packet (ascii): (\x00\x01\x0b\xb8)
+[uart_writer-3] 2026-10-21 10:58:49,169 - INFO - Loopback mode - not writing to the serial port
+[uart_writer-3] 2026-10-21 10:58:49,269 - INFO - Message packet (hex): 2800010bb829
+[uart_writer-3] 2026-10-21 10:58:49,269 - INFO - Message packet (ascii): (\x00\x01\x0b\xb8)
+[uart_writer-3] 2026-10-21 10:58:49,269 - INFO - Loopback mode - not writing to the serial port
+[uart_writer-3] 2026-10-21 10:58:49,369 - INFO - Message packet (hex): 2800010bb829
+[uart_writer-3] 2026-10-21 10:58:49,369 - INFO - Message packet (ascii): (\x00\x01\x0b\xb8)
+[uart_writer-3] 2026-10-21 10:58:49,369 - INFO - Loopback mode - not writing to the serial port
+[uart_writer-3] 2026-10-21 10:58:49,469 - INFO - Message packet (hex): 2800010bb829
+[uart_writer-3] 2026-10-21 10:58:49,469 - INFO - Message packet (ascii): (\x00\x01\x0b\xb8)
+[uart_writer-3] 2026-10-21 10:58:49,469 - INFO - Loopback mode - not writing to the serial port
+[uart_writer-3] 2026-10-21 10:58:49,569 - INFO - Message packet (hex): 2800010bb829
+[uart_writer-3] 2026-10-21 10:58:49,569 - INFO - Message packet (ascii): (\x00\x01\x0b\xb8)
+[uart_writer-3] 2026-10-21 10:58:49,569 - INFO - Loopback mode - not writing to the serial port
+[uart_writer-3] 2026-10-21 10:58:49,669 - INFO - Message packet (hex): 2800010bb829
+[uart_writer-3] 2026-10-21 10:58:49,669 - INFO - Message packet (ascii): (\x00\x01\x0b\xb8)
+[uart_writer-3] 2026-10-21 10:58:49,669 - INFO - Loopback mode - not writing to the serial port
+[uart_writer-3] 2026-10-21 10:58:49,769 - INFO - Message packet (hex): 2800010bb829
+[uart_writer-3] 2026-10-21 10:58:49,769 - INFO - Message packet (ascii): (\x00\x01\x0b\xb8)
+[uart_writer-3] 2026-10-21 10:58:49,769 - INFO - Loopback mode - not writing to the serial port
+[WARNING] [launch]: user interrupted with ctrl-c (SIGINT)
+[INFO] [uart_writer-3]: sending signal 'SIGINT' to process[uart_writer-3]
+[INFO] [wheel_odometry-2]: sending signal 'SIGINT' to process[wheel_odometry-2]
+[uart_writer-3] [WARN] [1792560529.796420155] [uart_writer]: shutdown: sending final STOP
+[uart_writer-3] Failed to publish log message to rosout: publisher's context is invalid, at ./src/rcl/publisher.c:389
+[uart_writer-3] 2026-10-21 10:58:49,796 - INFO - Message packet (hex): 2800010bb829
+[uart_writer-3] 2026-10-21 10:58:49,796 - INFO - Message packet (ascii): (\x00\x01\x0b\xb8)
+[uart_writer-3] 2026-10-21 10:58:49,796 - INFO - Loopback mode - not writing to the serial port
+[uart_writer-3] Traceback (most recent call last):
+[uart_writer-3]   File "/home/divagar/buggy_ros2/buggy_unified/install/buggy_pcd_lanelet_map/lib/buggy_pcd_lanelet_map/uart_writer", line 33, in <module>
+[uart_writer-3]     sys.exit(load_entry_point('buggy-pcd-lanelet-map', 'console_scripts', 'uart_writer')())
+[uart_writer-3]   File "/home/divagar/buggy_ros2/buggy_unified/build/buggy_pcd_lanelet_map/buggy_pcd_lanelet_map/uart_writer.py", line 99, in main
+[uart_writer-3]     rclpy.shutdown()
+[uart_writer-3]   File "/opt/ros/humble/local/lib/python3.10/dist-packages/rclpy/__init__.py", line 130, in shutdown
+[uart_writer-3]     _shutdown(context=context)
+[uart_writer-3]   File "/opt/ros/humble/local/lib/python3.10/dist-packages/rclpy/utilities.py", line 58, in shutdown
+[uart_writer-3]     return context.shutdown()
+[uart_writer-3]   File "/opt/ros/humble/local/lib/python3.10/dist-packages/rclpy/context.py", line 102, in shutdown
+[uart_writer-3]     self.__context.shutdown()
+[uart_writer-3] rclpy._rclpy_pybind11.RCLError: failed to shutdown: rcl_shutdown already called on the given context, at ./src/rcl/init.c:241
+[wheel_odometry-2] Traceback (most recent call last):
+[wheel_odometry-2]   File "/home/divagar/buggy_ros2/buggy_unified/install/buggy_perception/lib/buggy_perception/wheel_odometry", line 33, in <module>
+[wheel_odometry-2]     sys.exit(load_entry_point('buggy-perception', 'console_scripts', 'wheel_odometry')())
+[wheel_odometry-2]   File "/home/divagar/buggy_ros2/buggy_unified/build/buggy_perception/buggy_perception/wheel_odometry.py", line 132, in main
+[wheel_odometry-2]     rclpy.shutdown()
+[wheel_odometry-2]   File "/opt/ros/humble/local/lib/python3.10/dist-packages/rclpy/__init__.py", line 130, in shutdown
+[wheel_odometry-2]     _shutdown(context=context)
+[wheel_odometry-2]   File "/opt/ros/humble/local/lib/python3.10/dist-packages/rclpy/utilities.py", line 58, in shutdown
+[wheel_odometry-2]     return context.shutdown()
+[wheel_odometry-2]   File "/opt/ros/humble/local/lib/python3.10/dist-packages/rclpy/context.py", line 102, in shutdown
+[wheel_odometry-2]     self.__context.shutdown()
+[wheel_odometry-2] rclpy._rclpy_pybind11.RCLError: failed to shutdown: rcl_shutdown already called on the given context, at ./src/rcl/init.c:241
+[ERROR] [uart_writer-3]: process has died [pid 43322, exit code 1, cmd '/home/divagar/buggy_ros2/buggy_unified/install/buggy_pcd_lanelet_map/lib/buggy_pcd_lanelet_map/uart_writer --ros-args -r __node:=uart_writer --params-file /tmp/launch_params_qwp95on9'].
+[ERROR] [wheel_odometry-2]: process has died [pid 43320, exit code 1, cmd '/home/divagar/buggy_ros2/buggy_unified/install/buggy_perception/lib/buggy_perception/wheel_odometry --ros-args -r __node:=wheel_odometry --params-file /tmp/launch_params_hx2bpmbr'].

@@ -17,7 +17,7 @@ buggy - PCD + Lanelet2 localisation, routing and AUTO driving for the buggy
   ./buggy view   [MAP]                       map + RViz + simulated AUTO (no sensors, no hardware)
   ./buggy live   [MAP] [options]             REAL buggy: VLP-16 + ECU feedback + NDT localisation
   ./buggy replay BAG [MAP] [options]         same stack on a recorded rosbag (no hardware)
-  ./buggy sim    [MAP] [gui:=true]           Gazebo + emulated ECU, closed loop (no hardware)
+  ./buggy sim    [MAP] [--radar] [gui:=true] Gazebo + emulated ECU, closed loop (no hardware)
 
   ./buggy calibrate-brake [--preset 2|4] [--live]   measure the real stopping behaviour
   ./buggy add-map NAME FILE.osm [--pcd FILE.pcd]    create a map folder from a Vector Map Builder export
@@ -31,6 +31,10 @@ live / replay options
   --real         with --drive: uart_writer REALLY WRITES to the ECU (the buggy moves in AUTO)
   --no-rviz      do not open RViz
   --no-detector  no LiDAR obstacle detection (AUTO then refuses to start)
+  --radar        add radar obstacles (umrr radar on CAN + radar_fusion; Gazebo: synthetic radar)
+  --camera       camera + object-detection model: obstacles get a class name instead of "unknown"
+                 (detector_model:=<onnx>  camera_device:=/dev/video0  can_interface:=can0
+                 labeler_debug:=true publishes /perception/labeler_debug/image)
   key:=value     passed to ros2 launch (voxel_size:=0.5 ndt_rate_hz:=5.0 feedback_port:=/dev/ttyUSB1
                  sender_port:=... corridor_half_width:=1.0 bag_start_delay:=12.0 ...)
 MAP is a folder name in data/maps (default new_delhi_map) or a full path.
@@ -45,6 +49,22 @@ fresh_graph() { ros2 daemon stop >/dev/null 2>&1; }   # a stale daemon hides top
 clean_hw() {  # a leftover driver keeps the UDP/serial port open and silently starves the new run
   pkill -x velodyne_driver_node 2>/dev/null; pkill -x velodyne_transform_node 2>/dev/null
   pkill -f '__node:=[u]art_bridge' 2>/dev/null; true
+}
+# Other ROS nodes on the same ROS_DOMAIN_ID (a second ./buggy, the old stack, a bag-play container...)
+# share the graph with this one: duplicate nodes and a second publisher of base_link make the pose,
+# the vehicle and the RViz view jump. Refuse to start next to them.
+guard_graph() {
+  [ -n "${BUGGY_FORCE:-}" ] && return 0
+  local nodes
+  nodes=$(timeout 10 ros2 node list --spin-time 3 2>/dev/null | grep -vE '^/(rviz|transform_listener_impl|_ros2cli|launch_ros)' | sort -u)
+  if [ -n "$nodes" ]; then
+    echo "Other ROS nodes are already running in ROS_DOMAIN_ID=${ROS_DOMAIN_ID:-0}:"
+    echo "$nodes" | sed 's/^/    /' | head -12
+    echo "They would share the graph with this run and can make the pose / RViz view jump."
+    echo "Stop them (./buggy stop, close the other terminals), or use a private domain:"
+    echo "    ROS_DOMAIN_ID=42 ./buggy $cmd ...        (BUGGY_FORCE=1 ignores this check)"
+    exit 1
+  fi
 }
 confirm_real() {
   echo "!!! REAL UART WRITE: the buggy WILL MOVE when AUTO is engaged."
@@ -75,6 +95,11 @@ case "$cmd" in
     for p in gazebo_ros gazebo_ros2_control ackermann_steering_controller xacro joint_state_broadcaster; do
       chk "$p" "ros2 pkg prefix $p" "sudo apt install ros-humble-$(echo "$p" | tr _ -)"
     done
+    echo "Optional: radar + camera names (--radar / --camera)"
+    chk "onnxruntime (YOLOX detector)" "python3 -c 'import onnxruntime'" "pip install onnxruntime"
+    chk "opencv python (cv2)" "python3 -c 'import cv2'" "sudo apt install python3-opencv"
+    chk "detector model data/models/yolox_s_ti_18class_ti_today_qat.onnx" "[ -f $BUGGY_DATA_DIR/models/yolox_s_ti_18class_ti_today_qat.onnx ]" "copy the .onnx there or pass detector_model:=<path>"
+    chk "radar driver + radar_fusion built" "ros2 pkg prefix radar_fusion && ros2 pkg prefix umrr_ros2_driver" "./buggy build"
     echo "Python"
     for m in serial scipy numpy yaml; do chk "python3 $m" "python3 -c 'import $m'" "pip/apt: pyserial scipy numpy pyyaml"; done
     echo "This package"
@@ -100,10 +125,18 @@ case "$cmd" in
   add-map) python3 "$SCRIPTS/add_map.py" "$@" ;;
 
   view)
-    need_build; fresh_graph
-    MAP="${1:-}"; [ $# -gt 0 ] && shift
-    [ -n "$MAP" ] && set -- "map_path:=$MAP" "$@"
-    exec ros2 launch $PKG buggy.launch.py "$@" ;;
+    need_build; fresh_graph; guard_graph
+    MAP=""; ARGS=()
+    while [ $# -gt 0 ]; do
+      case "$1" in
+        --no-rviz) ARGS+=(rviz:=false) ;;
+        *:=*) ARGS+=("$1") ;;
+        -*) echo "unknown option $1"; exit 1 ;;
+        *) MAP="$1" ;;
+      esac; shift
+    done
+    [ -n "$MAP" ] && ARGS+=("map_path:=$MAP")
+    exec ros2 launch $PKG buggy.launch.py "${ARGS[@]}" ;;
 
   live|replay)
     need_build
@@ -113,6 +146,7 @@ case "$cmd" in
       case "$1" in
         --drive) DRIVE=1 ;; --real) REAL=1 ;;
         --no-rviz) ARGS+=(rviz:=false) ;; --no-detector) ARGS+=(obstacle_detection:=false) ;;
+        --radar) ARGS+=(radar:=true) ;; --camera) ARGS+=(camera:=true) ;;
         *:=*) ARGS+=("$1") ;;
         -*) echo "unknown option $1"; exit 1 ;;
         *) MAP="$1" ;;
@@ -127,7 +161,7 @@ case "$cmd" in
       ARGS+=(loopback:=false)
     fi
     [ $DRIVE = 1 ] && ARGS+=(drive:=true uart_write:=true)
-    fresh_graph
+    fresh_graph; guard_graph
     if [ -z "$BAG" ]; then
       clean_hw
       python3 "$SCRIPTS/live_preflight.py" || { echo "Preflight reported problems. Continue anyway? [y/N]"; read -r a; [ "$a" = y ] || exit 1; }
@@ -135,21 +169,29 @@ case "$cmd" in
     exec ros2 launch $PKG live.launch.py "${ARGS[@]}" ;;
 
   sim)
-    need_build; fresh_graph
-    MAP="${1:-}"; [ $# -gt 0 ] && [[ "$MAP" != *:=* ]] && shift || MAP=""
-    [ -n "$MAP" ] && set -- "map_path:=$MAP" "$@"
-    exec ros2 launch $PKG sim_live.launch.py "$@" ;;
+    need_build; fresh_graph; guard_graph
+    MAP=""; ARGS=()
+    while [ $# -gt 0 ]; do
+      case "$1" in
+        --radar) ARGS+=(radar:=true) ;; --camera) ARGS+=(camera:=true) ;; --no-rviz) ARGS+=(rviz:=false) ;;
+        *:=*) ARGS+=("$1") ;;
+        -*) echo "unknown option $1"; exit 1 ;;
+        *) MAP="$1" ;;
+      esac; shift
+    done
+    [ -n "$MAP" ] && ARGS+=("map_path:=$MAP")
+    exec ros2 launch $PKG sim_live.launch.py "${ARGS[@]}" ;;
 
   sim-map)
     need_build
     if [ "${1:-}" = "--save" ]; then
       exec ros2 service call /save_pointcloud_map std_srvs/srv/Trigger "{}"
     fi
-    fresh_graph
+    fresh_graph; guard_graph
     exec ros2 launch $PKG sim_build_map.launch.py "$@" ;;
 
   calibrate-brake)
-    need_build; fresh_graph
+    need_build; fresh_graph; guard_graph
     LIVE=0; PASS=(); LB=true; EXTRA=()
     while [ $# -gt 0 ]; do
       case "$1" in

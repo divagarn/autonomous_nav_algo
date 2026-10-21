@@ -1,0 +1,6 @@
+decel_ms2: 0.694
+note: worst case over all runs in buggy_brake_runs.jsonl, times safety_factor
+react_sec: 0.799
+runs: 1
+safety_factor: 1.2
+updated: '2026-10-20 14:40:53'

@@ -35,11 +35,12 @@ Requests (std_msgs/String on /system/request):
 State (std_msgs/String "k=v;k=v;..." on /system/state, 10 Hz).
 """
 import math
+import json
 import os
 
 import rclpy
 from autoware_perception_msgs.msg import PredictedObjects
-from geometry_msgs.msg import PoseStamped, PoseWithCovarianceStamped
+from geometry_msgs.msg import Point, PoseStamped, PoseWithCovarianceStamped
 from nav_msgs.msg import Path
 from rclpy.node import Node
 
@@ -47,6 +48,7 @@ import yaml
 from buggy_pcd_lanelet_map.paths import data_dir
 from std_msgs.msg import Bool, Float32, String
 from tf2_ros import Buffer, TransformException, TransformListener
+from visualization_msgs.msg import Marker, MarkerArray
 
 ACCEL = 1.0  # m/s^2, used for both speeding up and braking
 STOP_MARGIN = 2.5     # m kept between vehicle front and an obstacle
@@ -102,6 +104,25 @@ class OperationManager(Node):
         self.clear_since = None
         self.calib_time = -10.0
         self.lidar_time = -10.0
+        # optional extra sensors (launch args radar:=true / camera:=true)
+        self.radar_enabled = self.declare_parameter('radar_enabled', False).value
+        self.camera_enabled = self.declare_parameter('camera_enabled', False).value
+        # Obstacle memory: a sensor obstacle that was blocking the path is kept for this many
+        # seconds after it was last seen (LiDAR/radar drop-outs close to the bumper must not
+        # release the stop or skip it). It is dropped once the vehicle has passed it.
+        self.memory_sec = self.declare_parameter('obstacle_memory_sec', 4.0).value
+        # while the vehicle is still approaching the stop line a lost obstacle is kept up to this long
+        self.memory_max_sec = self.declare_parameter('obstacle_memory_max_sec', 25.0).value
+        # after a hold for a lost obstacle, creep at the 2 km/h preset for this long
+        self.creep_sec = self.declare_parameter('lost_obstacle_creep_sec', 10.0).value
+        self.creep_until = 0.0
+        # a single flicker is not an obstacle: it must have been seen this many times to be remembered
+        self.memory_min_hits = self.declare_parameter('obstacle_memory_min_hits', 5).value
+        self.memory = []        # {'obj': tuple, 't': last seen, 'hold_t': when the stop line was reached}
+        self.diag_t = 0.0
+        self.last_gap = None
+        self.radar_objs, self.radar_time = [], -10.0
+        self.names, self.names_time = [], -10.0   # camera names for obstacles
         self.loc_ok_time = 0.0
         self.uart_status = {}
         self.uart_time = 0.0
@@ -142,12 +163,19 @@ class OperationManager(Node):
         self.create_subscription(
             PredictedObjects, '/perception/lidar_objects', self.on_lidar_objects, 10)
         self.create_subscription(Bool, '/calibration/active', self.on_calib, 10)
+        self.create_subscription(
+            PredictedObjects, '/perception/radar_objects', self.on_radar_objects, 10)
+        self.create_subscription(String, '/perception/object_names', self.on_names, 10)
         self.pose_pub = self.create_publisher(PoseStamped, '/vehicle/sim_pose', 10)
         self.steer_pub = self.create_publisher(Float32, '/sim/steering_angle', 1)
         self.speed_pub = self.create_publisher(Float32, '/sim/vehicle_speed', 1)
         if self.publish_real:
             self.real_steer_pub = self.create_publisher(Float32, '/steering_angle', 1)
         self.state_pub = self.create_publisher(String, '/system/state', 10)
+        # Autoware-style planning display: slow zone (orange), stop zone (blue), stop wall
+        self.zone_pub = self.create_publisher(MarkerArray, '/planning/stop_zone_marker', 1)
+        self.zone_half_width = self.declare_parameter('zone_half_width', 1.5).value
+        self.create_timer(0.2, self.publish_zones)
         self.dt = 0.05
         self.create_timer(self.dt, self.step)
         self.create_timer(0.1, self.publish_state)
@@ -212,6 +240,26 @@ class OperationManager(Node):
         self.lidar_objs = self.parse_objects(msg)
         self.lidar_time = self.mono()
 
+    def on_radar_objects(self, msg):    # radar_fusion tracks (optional); a message = radar alive
+        self.radar_objs = self.parse_objects(msg)
+        self.radar_time = self.mono()
+
+    def on_names(self, msg):            # camera class names from object_labeler (optional)
+        try:
+            self.names = json.loads(msg.data)
+        except ValueError:
+            self.names = []
+        self.names_time = self.mono()
+
+    def name_near(self, x, y):
+        """Camera class name of the obstacle at (x, y), or None."""
+        if self.mono() - self.names_time > 1.5:
+            return None
+        best = min(self.names, key=lambda n: math.hypot(n['x'] - x, n['y'] - y), default=None)
+        if best and math.hypot(best['x'] - x, best['y'] - y) < 1.5 and best['name'] != 'unknown':
+            return best['name']
+        return None
+
     def on_calib(self, msg):
         if msg.data:
             self.calib_time = self.mono()
@@ -230,29 +278,194 @@ class OperationManager(Node):
 
     def all_objects(self):
         lidar = self.lidar_objs if self.mono() - self.lidar_time < 0.7 else []
-        return self.dummy_objects + lidar
+        radar = self.radar_objs if self.mono() - self.radar_time < 1.0 else []
+        return self.dummy_objects + lidar + radar
+
+    def block_dist(self, o):
+        """Distance (front bumper -> near edge) if object `o` blocks the route ahead, else None."""
+        ox, oy, oyaw, length, width, label = o[:6]
+        hi = len(self.path)
+        j = min(range(self.idx, hi), key=lambda i: math.hypot(
+            self.path[i][0] - ox, self.path[i][1] - oy))
+        px, py = self.path[j][0], self.path[j][1]
+        lat = math.hypot(px - ox, py - oy)
+        k = min(j, hi - 2)
+        tang = math.atan2(self.path[k + 1][1] - self.path[k][1],
+                          self.path[k + 1][0] - self.path[k][0])
+        th = oyaw - tang
+        half_lat = abs(math.cos(th)) * width / 2 + abs(math.sin(th)) * length / 2
+        half_lon = abs(math.cos(th)) * length / 2 + abs(math.sin(th)) * width / 2
+        if lat - half_lat > self.safe_half_width:
+            return None
+        dist = self.seg[j] - self.seg[self.idx] - FRONT_OFFSET - half_lon
+        return dist if -half_lon * 2 < dist < DETECT_RANGE else None
+
+    def update_memory(self):
+        """Remember blocking LiDAR/radar obstacles through sensor drop-outs.
+
+        A remembered obstacle that is no longer seen stays valid
+          * until the vehicle reaches its stop line (up to obstacle_memory_max_sec), so a drop-out
+            during the approach can never cancel the slow-down / stop, and
+          * for obstacle_memory_sec after the buggy has stopped at that line;
+        then it is forgotten and the buggy creeps (2 km/h) for lost_obstacle_creep_sec.
+        Entries are also dropped once the vehicle has passed them.
+        """
+        if not self.path or self.memory_sec <= 0.0:    # obstacle_memory_sec:=0 switches it off
+            self.memory = []
+            return
+        now = self.mono()
+        fresh = (self.lidar_objs if now - self.lidar_time < 0.7 else []) + \
+            (self.radar_objs if now - self.radar_time < 1.0 else [])
+        for o in fresh:
+            if self.block_dist(o) is None:
+                continue
+            for m in self.memory:
+                if math.hypot(m['obj'][0] - o[0], m['obj'][1] - o[1]) < 1.0:
+                    m['obj'], m['t'], m['hold_t'] = o, now, None
+                    m['n'] += 1
+                    break
+            else:
+                self.memory.append({'obj': o, 't': now, 'hold_t': None, 'n': 1})
+        s_stop = self.stopping_distance(max(self.v, 0.55))
+        keep = []
+        for m in self.memory:
+            d = self.block_dist(m['obj'])
+            if d is None:                      # passed, or no longer in the corridor
+                continue
+            if now - m['t'] > 1.0 and m['n'] < self.memory_min_hits:
+                continue                       # was only a flicker
+            if now - m['t'] > 0.35:            # lost: not shown by the sensors right now
+                if m['hold_t'] is None and d - self.stop_margin < s_stop:
+                    m['hold_t'] = now          # the buggy has reached the stop line
+                if m['hold_t'] is not None:
+                    if now - m['hold_t'] > self.memory_sec:
+                        self.creep_until = now + self.creep_sec
+                        continue
+                elif now - m['t'] > self.memory_max_sec:
+                    continue
+            keep.append(m)
+        self.memory = keep
+
+    def remembered(self):
+        """Remembered obstacles that the sensors do not currently show."""
+        now = self.mono()
+        return [m['obj'] for m in self.memory
+                if now - m['t'] > 0.35 and m['n'] >= self.memory_min_hits]
 
     def obstacle_ahead(self):
-        """(distance from front bumper to nearest blocking object edge, label) or None."""
+        """(bumper -> nearest blocking object edge [m], label, camera name) or None."""
         best = None
-        hi = len(self.path)
-        for (ox, oy, oyaw, length, width, label) in self.all_objects():
-            j = min(range(self.idx, hi), key=lambda i: math.hypot(
-                self.path[i][0] - ox, self.path[i][1] - oy))
-            px, py = self.path[j][0], self.path[j][1]
-            lat = math.hypot(px - ox, py - oy)
-            k = min(j, hi - 2)
-            tang = math.atan2(self.path[k + 1][1] - self.path[k][1],
-                              self.path[k + 1][0] - self.path[k][0])
-            th = oyaw - tang
-            half_lat = abs(math.cos(th)) * width / 2 + abs(math.sin(th)) * length / 2
-            half_lon = abs(math.cos(th)) * length / 2 + abs(math.sin(th)) * width / 2
-            if lat - half_lat > self.safe_half_width:
-                continue
-            dist = self.seg[j] - self.seg[self.idx] - FRONT_OFFSET - half_lon
-            if -half_lon * 2 < dist < DETECT_RANGE and (best is None or dist < best[0]):
-                best = (dist, label)
+        for o in self.all_objects() + self.remembered():
+            dist = self.block_dist(o)
+            if dist is not None and (best is None or dist < best[0]):
+                best = (dist, o[5], self.name_near(o[0], o[1]))
         return best
+
+    @staticmethod
+    def obs_name(obs):
+        """Camera class name if known, else the label's name, else 'obstacle'."""
+        if obs[2]:
+            return obs[2]
+        return {1: 'car', 2: 'truck', 3: 'bus', 5: 'motorcycle', 6: 'bicycle',
+                7: 'pedestrian', 8: 'animal'}.get(obs[1], 'obstacle')
+
+    # -- planning display (Autoware-style stop / slow zones) -----------------
+    def ribbon(self, a, b, half_w, z, rgba, mid, ns, now):
+        """Strip of road between path arclengths a..b (clamped to the path), as a marker."""
+        a, b = max(a, 0.0), min(b, self.seg[-1])
+        if b - a < 0.05:
+            return None
+        pts, i = [], 0
+        samples = [a] + [t for t in self.seg if a < t < b] + [b]
+        for sv in samples:
+            while i < len(self.seg) - 2 and self.seg[i + 1] < sv:
+                i += 1
+            span = self.seg[i + 1] - self.seg[i]
+            f = 0.0 if span <= 0 else (sv - self.seg[i]) / span
+            p0, p1 = self.path[i], self.path[i + 1]
+            x, y = p0[0] + f * (p1[0] - p0[0]), p0[1] + f * (p1[1] - p0[1])
+            zc = p0[2] + f * (p1[2] - p0[2])
+            tx, ty = p1[0] - p0[0], p1[1] - p0[1]
+            n = math.hypot(tx, ty) or 1.0
+            nx, ny = -ty / n, tx / n
+            pts.append(((x + nx * half_w, y + ny * half_w, zc + z),
+                        (x - nx * half_w, y - ny * half_w, zc + z)))
+        m = Marker()
+        m.header.frame_id, m.header.stamp = 'map', now
+        m.ns, m.id, m.type, m.action = ns, mid, Marker.TRIANGLE_LIST, Marker.ADD
+        m.pose.orientation.w = 1.0
+        m.scale.x = m.scale.y = m.scale.z = 1.0
+        m.color.r, m.color.g, m.color.b, m.color.a = rgba
+        m.lifetime.sec, m.lifetime.nanosec = 0, 500_000_000
+        for (l0, r0), (l1, r1) in zip(pts, pts[1:]):
+            for q in (l0, r0, l1, r0, r1, l1):
+                m.points.append(Point(x=q[0], y=q[1], z=q[2]))
+        return m
+
+    def zone_markers(self, line, label, now, mid, buffer_m=0.0):
+        """Slow / stop zones leading to a stop line at bumper arclength `line`."""
+        preset = 2.0 if self.limit_kmh <= 3.0 else 4.0
+        cruise = 2.0 if self.limit_kmh <= 3.0 else 4.0
+        s_stop = self.stopping_distance(max(self.v, cruise / 3.6))
+        s_slow = self.stopping_distance(preset / 3.6) + self.slow_zone
+        hw = self.zone_half_width
+        sb = self.seg[self.idx] + FRONT_OFFSET          # front bumper, arclength
+        # a stop line / zone is measured at the front bumper; the strip drawn is the road there
+        out = []
+        for a, b, rgba, ns, z in (
+                (line - s_slow, line - s_stop, (1.0, 0.62, 0.0, 0.45), 'slow_zone', 0.07),
+                (line - s_stop, line, (0.10, 0.35, 1.0, 0.60), 'stop_zone', 0.08),
+                (line, line + buffer_m, (0.85, 0.10, 0.10, 0.40), 'keep_clear', 0.07)):
+            r = self.ribbon(max(a, sb), b, hw, z, rgba, mid, ns, now)
+            if r is not None:
+                out.append(r)
+                mid += 1
+        if line > sb - 0.2 and line <= self.seg[-1]:
+            w = Marker()
+            w.header.frame_id, w.header.stamp = 'map', now
+            w.ns, w.id, w.type, w.action = 'stop_wall', mid, Marker.CUBE, Marker.ADD
+            j = min(range(len(self.seg)), key=lambda i: abs(self.seg[i] - line))
+            k = min(j, len(self.path) - 2)
+            yaw = math.atan2(self.path[k + 1][1] - self.path[k][1],
+                             self.path[k + 1][0] - self.path[k][0])
+            w.pose.position.x, w.pose.position.y = self.path[j][0], self.path[j][1]
+            w.pose.position.z = self.path[j][2] + 0.6
+            w.pose.orientation.z, w.pose.orientation.w = math.sin(yaw / 2), math.cos(yaw / 2)
+            w.scale.x, w.scale.y, w.scale.z = 0.12, 2 * hw, 1.2
+            w.color.r, w.color.g, w.color.b, w.color.a = 1.0, 0.1, 0.1, 0.85
+            w.lifetime.sec, w.lifetime.nanosec = 0, 500_000_000
+            out.append(w)
+            t = Marker()
+            t.header = w.header
+            t.ns, t.id, t.type, t.action = 'stop_label', mid + 1, Marker.TEXT_VIEW_FACING, Marker.ADD
+            t.pose.position.x, t.pose.position.y = w.pose.position.x, w.pose.position.y
+            t.pose.position.z = w.pose.position.z + 1.1
+            t.pose.orientation.w = 1.0
+            t.scale.z = 0.6
+            t.color.r = t.color.g = t.color.b = t.color.a = 1.0
+            t.text = f'{label} {max(line - sb, 0.0):.1f} m'
+            t.lifetime.sec, t.lifetime.nanosec = 0, 500_000_000
+            out.append(t)
+        return out
+
+    def publish_zones(self):
+        if not self.path or self.routing != 'set' or len(self.path) < 2:
+            return
+        if self.localized or not self.live:
+            self.match()
+        now = self.get_clock().now().to_msg()
+        arr = MarkerArray()
+        obs = self.obstacle_ahead()
+        sb = self.seg[self.idx] + FRONT_OFFSET
+        mid = 0
+        if obs is not None:
+            what = self.obs_name(obs)
+            arr.markers += self.zone_markers(sb + obs[0] - self.stop_margin, f'STOP: {what}',
+                                             now, mid, buffer_m=self.stop_margin)
+            mid += 10
+        arr.markers += self.zone_markers(self.seg[-1] - self.goal_margin + FRONT_OFFSET,
+                                         'GOAL', now, mid)
+        self.zone_pub.publish(arr)
 
     def auto_available(self):
         if self.live and not self.drive_enabled:
@@ -343,6 +556,8 @@ class OperationManager(Node):
             return 'FAULT: pose stale - stopped'
         if self.mono() - self.loc_ok_time > self.loc_grace:
             return 'FAULT: localization not converged - stopped'
+        if self.loc.get('tf_conflict'):
+            return f"FAULT: TF conflict ({self.loc['tf_conflict']}) - stopped"
         if self.require_detector and self.mono() - self.lidar_time > 0.7:
             return 'FAULT: obstacle detector not running - stopped'
         if self.routing != 'set':
@@ -354,7 +569,8 @@ class OperationManager(Node):
     def step_live(self):
         steer, red, yellow = 0.0, True, False     # safe default = STOP
         if self.mode != 'auto':
-            self.hold_obstacle, self.clear_since = False, None
+            self.hold_obstacle, self.clear_since, self.memory = False, None, []
+            self.creep_until = 0.0
         pose = self.live_pose()
         if pose is not None:
             self.rx, self.ry, self.ryaw, self.rz = pose
@@ -368,6 +584,7 @@ class OperationManager(Node):
                 self.get_logger().error(fault)
             else:
                 remaining = self.seg[-1] - self.seg[self.idx]
+                self.update_memory()
                 obs = self.obstacle_ahead()
                 preset = 2.0 if self.limit_kmh <= 3.0 else 4.0
                 # the ECU takes seconds to ramp up, so plan with the larger of
@@ -391,11 +608,22 @@ class OperationManager(Node):
                         self.hold_obstacle = True
                 slow = (obs is not None and obs[0] - self.stop_margin < s_slow) or \
                     remaining - self.goal_margin < s_slow
+                self.last_gap = obs[0] if obs is not None else None
+                if now - self.diag_t > 1.0:
+                    self.diag_t = now
+                    gap = f'{obs[0]:.1f}' if obs is not None else '-'
+                    self.get_logger().info(
+                        f'AUTO: v={self.v * 3.6:.1f} km/h gap={gap} m stop_below='
+                        f'{self.stop_margin + s_stop:.1f} m slow_below={self.stop_margin + s_slow:.1f} m '
+                        f'goal_left={remaining:.1f} m hold={self.hold_obstacle} '
+                        f'remembered={len(self.remembered())} creep={max(self.creep_until - now, 0):.0f}s -> '
+                        f'{"RED" if (self.hold_obstacle or remaining - self.goal_margin < s_stop) else ("SLOW" if slow else "GO")}')
                 if remaining - self.goal_margin < s_stop:
                     self.routing, self.mode, self.msg = 'arrived', 'stop', 'Arrived at goal'
                 elif self.hold_obstacle:
                     gap = f'{max(obs[0], 0):.1f} m' if obs is not None else 'clearing'
-                    self.msg = f'Obstacle ahead ({gap}) - stopped'
+                    what = f': {self.obs_name(obs)}' if obs is not None else ''
+                    self.msg = f'Obstacle ahead{what} ({gap}) - stopped'
                 else:
                     if self.msg.startswith('Obstacle'):
                         self.msg = ''
@@ -403,10 +631,10 @@ class OperationManager(Node):
                     max_d = self.steer_rate * self.dt
                     self.cmd_steer += max(-max_d, min(max_d, demand - self.cmd_steer))
                     steer, red = self.cmd_steer, False
-                    yellow = slow or preset <= 2.0       # 2 km/h preset when slowing
+                    yellow = slow or preset <= 2.0 or now < self.creep_until   # 2 km/h when slowing
                     self.preset_kmh = 2.0 if yellow else 4.0
                     if slow and obs is not None:
-                        self.msg = f'Slowing: obstacle {max(obs[0], 0):.1f} m ahead'
+                        self.msg = f'Slowing: {self.obs_name(obs)} {max(obs[0], 0):.1f} m ahead'
                     elif slow:
                         self.msg = 'Slowing for goal'
                     elif self.msg.startswith('Slowing'):
@@ -430,11 +658,11 @@ class OperationManager(Node):
             remaining = self.seg[-1] - self.seg[self.idx]
             target = min(self.limit_kmh / 3.6,
                          math.sqrt(2.0 * ACCEL * max(remaining, 0.0)) + 0.05)
+            self.update_memory()
             obs = self.obstacle_ahead()
             if obs is not None:
                 target = min(target, math.sqrt(2.0 * ACCEL * max(obs[0] - STOP_MARGIN, 0.0)))
-                names = {1: 'car', 3: 'bus', 7: 'pedestrian'}
-                self.msg = f'Obstacle ahead: {names.get(obs[1], "object")} {max(obs[0], 0):.1f} m'
+                self.msg = f'Obstacle ahead: {self.obs_name(obs)} {max(obs[0], 0):.1f} m'
             elif self.msg.startswith('Obstacle'):
                 self.msg = ''
             demand = self.pure_pursuit()
@@ -480,6 +708,19 @@ class OperationManager(Node):
                 self.routing, self.mode, self.v = 'arrived', 'stop', 0.0
                 self.msg = 'Arrived at goal'
 
+    def sensors_text(self):
+        t = self.mono()
+        lidar = 'off' if not self.live else ('ok' if t - self.lidar_time < 0.7 else 'STALE')
+        parts = [f'lidar {lidar} ({len(self.lidar_objs)})']
+        if self.radar_enabled:
+            parts.append('radar ' + ('ok' if t - self.radar_time < 1.0 else 'STALE')
+                         + f' ({len(self.radar_objs)})')
+        if self.camera_enabled:
+            named = sum(1 for n in self.names if n['name'] != 'unknown')
+            parts.append('camera ' + ('ok' if t - self.names_time < 1.5 else 'STALE/no objects')
+                         + f' ({named} named)')
+        return ' | '.join(parts)
+
     def drive_text(self):
         if not self.live:
             return 'simulation'
@@ -498,12 +739,20 @@ class OperationManager(Node):
         progress = 100.0 * self.seg[self.idx] / total if total > 0 and self.seg else 0.0
         kv = {
             'mode': self.mode, 'routing': self.routing,
-            'localization': (self.loc.get('state', 'no_data') if self.live else
+            'localization': ((self.loc.get('state', 'no_data')
+                              + (' TF-CONFLICT ' + self.loc['tf_conflict']
+                                 if self.loc.get('tf_conflict') else '')
+                              + (f" ({self.loc['jumps']} pose jumps/30s)"
+                                 if int(self.loc.get('jumps', '0') or 0) > 3 else ''))
+                             if self.live else
                              'initialized' if self.localized else 'uninitialized'),
             'drive': self.drive_text(),
             'detector': ('off' if not self.live else 'ok'
                          if self.mono() - self.lidar_time < 0.7 else 'STALE'),
             'objects': str(len(self.all_objects())),
+            'obs_gap': f'{self.last_gap:.1f}' if self.last_gap is not None else '-',
+            'stop_below': f'{self.stop_margin + self.stopping_distance(max(self.v, 0.55)):.1f}',
+            'sensors': self.sensors_text(),
             'stop_model': (f'react {self.react:.1f}s decel {self.decel:.2f} '
                            f'-> {self.stopping_distance(4 / 3.6):.1f} m @4km/h, '
                            f'{self.calib_source}'),

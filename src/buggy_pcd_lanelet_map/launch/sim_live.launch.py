@@ -30,6 +30,10 @@ def generate_launch_description():
                               default_value='office_track_sim'),
         DeclareLaunchArgument('rviz', default_value='true'),
         DeclareLaunchArgument('gui', default_value='false'),
+        DeclareLaunchArgument('radar', default_value='false',
+                              description='synthetic radar (radar_sim) + radar_fusion'),
+        DeclareLaunchArgument('camera', default_value='false',
+                              description='ignored in Gazebo (no camera model)'),
         # this sim track has wall pieces ~0.3 m from the vehicle body; the real default
         # (1.25 m) would hold the vehicle at the first one
         DeclareLaunchArgument('corridor_half_width', default_value='0.85'),
@@ -40,6 +44,8 @@ def generate_launch_description():
                 'map_path': LaunchConfiguration('map_path'),
                 'rviz': LaunchConfiguration('rviz'),
                 'gui': LaunchConfiguration('gui'),
+                'radar': LaunchConfiguration('radar'),
+                'camera': LaunchConfiguration('camera'),
                 'corridor_half_width': LaunchConfiguration('corridor_half_width'),
             }.items()),
     ])

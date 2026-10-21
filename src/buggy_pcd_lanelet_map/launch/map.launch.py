@@ -130,6 +130,12 @@ def launch_setup(context):
         parameters=[{'live': live,
                      'base_link_at_center': ParameterValue(
                          LaunchConfiguration('base_link_at_center'), value_type=bool),
+                     'obstacle_memory_sec': ParameterValue(
+                         LaunchConfiguration('obstacle_memory_sec'), value_type=float),
+                     'radar_enabled': ParameterValue(
+                         LaunchConfiguration('radar'), value_type=bool),
+                     'camera_enabled': ParameterValue(
+                         LaunchConfiguration('camera'), value_type=bool),
                      'corridor_half_width': ParameterValue(
                          LaunchConfiguration('corridor_half_width'), value_type=float),
                      'drive_enabled': ParameterValue(LaunchConfiguration('drive'),
@@ -170,6 +176,10 @@ def generate_launch_description():
         DeclareLaunchArgument('live', default_value='false',
                               description='true: pose from NDT localization (no click TF/sim)'),
         DeclareLaunchArgument('use_sim_time', default_value='false'),
+        DeclareLaunchArgument('obstacle_memory_sec', default_value='4.0',
+                              description='keep a blocking sensor obstacle this long after it was last seen'),
+        DeclareLaunchArgument('radar', default_value='false'),
+        DeclareLaunchArgument('camera', default_value='false'),
         DeclareLaunchArgument('corridor_half_width', default_value='1.25',
                               description='obstacles within this distance of the route centre '
                                           'line stop the vehicle (vehicle half width 0.72 + clearance)'),

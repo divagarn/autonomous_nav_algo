@@ -77,6 +77,11 @@ Visualization Manager:
             Value: /planning/route_path
             Durability Policy: Transient Local
             Reliability Policy: Reliable
+        - Class: rviz_default_plugins/MarkerArray
+          Name: Stop / Slow Zones
+          Enabled: true
+          Topic:
+            Value: /planning/stop_zone_marker
     - Class: rviz_common/Group
       Name: Perception
       Enabled: true
@@ -96,6 +101,21 @@ Visualization Manager:
           Enabled: true
           Topic:
             Value: /simulation/dummy_objects/marker
+        - Class: rviz_default_plugins/MarkerArray
+          Name: LiDAR Objects
+          Enabled: true
+          Topic:
+            Value: /perception/lidar_objects_marker
+        - Class: rviz_default_plugins/MarkerArray
+          Name: Radar Objects
+          Enabled: true
+          Topic:
+            Value: /perception/radar_objects_marker
+        - Class: rviz_default_plugins/MarkerArray
+          Name: Labeled Objects (camera names)
+          Enabled: true
+          Topic:
+            Value: /perception/objects_marker
   Tools:
     - Class: rviz_default_plugins/MoveCamera
     - Class: rviz_default_plugins/Select

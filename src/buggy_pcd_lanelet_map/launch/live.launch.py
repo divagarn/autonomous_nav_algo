@@ -33,6 +33,8 @@ from launch.substitutions import LaunchConfiguration
 from launch_ros.actions import Node
 from launch_ros.parameter_descriptions import ParameterValue
 
+from buggy_pcd_lanelet_map.paths import data_dir
+
 
 def launch_setup(context):
     pkg = get_package_share_directory('buggy_pcd_lanelet_map')
@@ -56,6 +58,9 @@ def launch_setup(context):
             'live': 'true',
             'drive': LaunchConfiguration('drive'),
             'obstacle_detection': LaunchConfiguration('obstacle_detection'),
+            'radar': LaunchConfiguration('radar'),
+            'camera': LaunchConfiguration('camera'),
+            'obstacle_memory_sec': LaunchConfiguration('obstacle_memory_sec'),
             'use_sim_time': 'true' if sim else 'false',
             'base_link_at_center': 'true' if gz else 'false',
             'corridor_half_width': LaunchConfiguration('corridor_half_width'),
@@ -92,7 +97,8 @@ def launch_setup(context):
     elif replay:
         actions.append(TimerAction(period=float(LaunchConfiguration('bag_start_delay').perform(context)),
                                    actions=[ExecuteProcess(
-                                       cmd=['ros2', 'bag', 'play', bag_path, '--clock'],
+                                       cmd=['ros2', 'bag', 'play', bag_path, '--clock', '-r',
+                                            LaunchConfiguration('bag_rate').perform(context)],
                                        name='bag_play', output='screen')]))
     else:
         actions.append(Node(
@@ -192,6 +198,74 @@ def launch_setup(context):
                          'corridor_half_width': ParameterValue(
                              LaunchConfiguration('corridor_half_width'), value_type=float)}]))
 
+    # ---- optional: radar (radar:=true) -----------------------------------------
+    # radar_fusion (IMM-tracked radar objects) -> radar_object_bridge -> the obstacle logic.
+    # Hardware: umrr_ros2_driver on CAN. Gazebo: radar_sim (synthetic targets). A rosbag has
+    # no radar topic, so nothing starts in replay.
+    if LaunchConfiguration('radar').perform(context).lower() == 'true':
+        if replay:
+            print('[live.launch] radar:=true ignored: a rosbag replay has no radar data')
+        else:
+            if gz:
+                actions.append(Node(package='buggy_pcd_lanelet_map', executable='radar_sim',
+                                    name='radar_sim', output='screen', parameters=[t]))
+            else:
+                actions.append(IncludeLaunchDescription(PythonLaunchDescriptionSource(
+                    os.path.join(get_package_share_directory('umrr_ros2_driver'), 'launch',
+                                 'radar.launch.py')),
+                    launch_arguments={'can_interface': LaunchConfiguration('can_interface')}.items()))
+            fusion_params = os.path.join(get_package_share_directory('radar_fusion'),
+                                         'config', 'radar_fusion_params.yaml')
+            actions.append(Node(
+                package='radar_fusion', executable='radar_fusion_node', name='radar_fusion',
+                output='screen',
+                parameters=[fusion_params, {
+                    **t,
+                    'output_frame': 'map',        # this stack's global frame (EKF map->base_link)
+                    'odom_topic': '/odom',        # wheel_odometry
+                    # radar_sim has no Doppler; the real radar does
+                    'radar.use_doppler': not gz,
+                    'ego_motion.speed_source': 'odom' if gz else 'radar_doppler',
+                    # camera association inside radar_fusion needs calibration files; names
+                    # come from object_labeler instead
+                    'camera.enabled': False}]))
+            actions.append(Node(package='buggy_pcd_lanelet_map', executable='radar_object_bridge',
+                                name='radar_object_bridge', output='screen', parameters=[t]))
+
+    # ---- optional: camera names (camera:=true) ----------------------------------
+    # camera -> YOLOX 18-class detector -> object_labeler gives the LiDAR/radar obstacles the
+    # detector's class name instead of "unknown". Hardware: camera_raw_node on camera_device;
+    # replay: the bag's /camera/image_raw; Gazebo has no camera model.
+    if LaunchConfiguration('camera').perform(context).lower() == 'true':
+        if gz:
+            print('[live.launch] camera:=true ignored: Gazebo has no camera model')
+        else:
+            if not replay:
+                actions.append(IncludeLaunchDescription(PythonLaunchDescriptionSource(
+                    os.path.join(get_package_share_directory('camera_processing'), 'launch',
+                                 'camera_raw.launch.py')),
+                    launch_arguments={'device': LaunchConfiguration('camera_device')}.items()))
+            actions.append(Node(
+                package='camera_processing', executable='yolox_detector_node',
+                name='yolox_detector', output='screen',
+                parameters=[{'model_path': LaunchConfiguration('detector_model'),
+                             'input_topic': '/camera/image_raw',
+                             'conf_threshold': 0.3, 'nms_threshold': 0.45, 'num_classes': 18,
+                             'decode_grid_stride': False,
+                             # keep the laptop CPU for NDT: 2 threads, 5 frames/s
+                             'intra_op_threads': ParameterValue(
+                                 LaunchConfiguration('detector_threads'), value_type=int),
+                             'max_rate_hz': ParameterValue(
+                                 LaunchConfiguration('detector_rate_hz'), value_type=float),
+                             **t}]))
+            actions.append(Node(package='buggy_perception', executable='camera_static_tf',
+                                name='camera_static_tf', output='screen', parameters=[t]))
+            actions.append(Node(
+                package='buggy_pcd_lanelet_map', executable='object_labeler',
+                name='object_labeler', output='screen',
+                parameters=[{**t, 'debug_image': ParameterValue(
+                    LaunchConfiguration('labeler_debug'), value_type=bool)}]))
+
     # ---- UART write (off unless asked; loopback unless explicitly real) -----
     uart_write = LaunchConfiguration('uart_write').perform(context).lower() == 'true' or gz
     loopback = LaunchConfiguration('loopback').perform(context).lower() != 'false' or gz
@@ -224,6 +298,28 @@ def generate_launch_description():
         DeclareLaunchArgument('sender_port', default_value='/dev/ttyUSB0'),
         DeclareLaunchArgument('corridor_half_width', default_value='1.25',
                               description='obstacle corridor half width around the route [m]'),
+        DeclareLaunchArgument('obstacle_memory_sec', default_value='4.0',
+                              description='keep a blocking LiDAR/radar obstacle this long after it was '
+                                          'last seen (0 = off); covers sensor drop-outs near the bumper'),
+        DeclareLaunchArgument('radar', default_value='false',
+                              description='radar_fusion obstacles (hardware: umrr driver on CAN; '
+                                          'Gazebo: radar_sim); no effect in a bag replay'),
+        DeclareLaunchArgument('can_interface', default_value='can0',
+                              description='radar:=true (hardware): SocketCAN interface'),
+        DeclareLaunchArgument('camera', default_value='false',
+                              description='camera + YOLOX: give obstacles their class name'),
+        DeclareLaunchArgument('camera_device', default_value='/dev/video0'),
+        DeclareLaunchArgument(
+            'detector_model',
+            default_value=os.path.join(data_dir(), 'models',
+                                       'yolox_s_ti_18class_ti_today_qat.onnx'),
+            description='camera:=true: YOLOX 18-class ONNX model'),
+        DeclareLaunchArgument('detector_threads', default_value='2',
+                              description='camera:=true: CPU threads for the ONNX detector (0 = all)'),
+        DeclareLaunchArgument('detector_rate_hz', default_value='5.0',
+                              description='camera:=true: max detector frames/s (0 = every frame)'),
+        DeclareLaunchArgument('labeler_debug', default_value='false',
+                              description='publish /perception/labeler_debug/image (overlay)'),
         DeclareLaunchArgument('gazebo', default_value='false',
                               description='Gazebo vehicle + emulated ECU instead of hardware/bag '
                                           '(use sim_live.launch.py)'),
@@ -235,6 +331,8 @@ def generate_launch_description():
         DeclareLaunchArgument('bag_path', default_value='',
                               description='replay this rosbag2 instead of the hardware'),
         DeclareLaunchArgument('bag_start_delay', default_value='8.0'),
+        DeclareLaunchArgument('bag_rate', default_value='1.0',
+                              description='replay speed (e.g. 0.3 on a slow machine / with --camera)'),
         DeclareLaunchArgument('voxel_size', default_value='0.3'),
         DeclareLaunchArgument('max_range', default_value='40.0'),
         DeclareLaunchArgument('ndt_rate_hz', default_value='10.0'),

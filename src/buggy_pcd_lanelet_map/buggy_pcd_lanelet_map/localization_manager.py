@@ -30,6 +30,7 @@ from geometry_msgs.msg import PoseWithCovarianceStamped
 from rclpy.node import Node
 from rclpy.qos import DurabilityPolicy, HistoryPolicy, QoSProfile, ReliabilityPolicy
 from std_msgs.msg import String
+from tf2_msgs.msg import TFMessage
 from std_srvs.srv import SetBool
 from tf2_ros import Buffer, TransformException, TransformListener
 
@@ -70,7 +71,35 @@ class LocalizationManager(Node):
                                  lambda m: setattr(self, 'iters', m.data), 10)
         self.create_subscription(Float32Stamped, '/exe_time_ms',
                                  lambda m: setattr(self, 'exe_ms', m.data), 10)
+        # TF watchdog: more than one node publishing the same frame (e.g. an old stack's odometry
+        # still running on the same ROS domain) makes the pose, the vehicle model and the RViz view
+        # jump back and forth. Watch the dynamic /tf for a child frame with several parents.
+        self.tf_parents = {}      # child -> {parent: last receive time}
+        self.jumps = []           # times of map->base_link jumps > jump_m
+        self.jump_m = float(p('jump_m', 0.5).value)
+        self.last_xy = None
+        self.create_subscription(TFMessage, '/tf', self.on_tf, 200)
         self.create_timer(0.2, self.publish_state)
+
+    def on_tf(self, msg):
+        now = self.now_s()
+        for t in msg.transforms:
+            self.tf_parents.setdefault(t.child_frame_id, {})[t.header.frame_id] = now
+            if t.header.frame_id == self.map_frame and t.child_frame_id == self.base_frame:
+                xy = (t.transform.translation.x, t.transform.translation.y)
+                if self.last_xy is not None and math.dist(xy, self.last_xy) > self.jump_m:
+                    self.jumps.append(now)
+                self.last_xy = xy
+
+    def tf_conflict(self):
+        """'child<-parentA+parentB' for frames published by two different parents recently."""
+        now = self.now_s()
+        out = []
+        for child, parents in self.tf_parents.items():
+            live = sorted(par for par, t in parents.items() if now - t < 3.0)
+            if len(live) > 1:
+                out.append(f"{child}<-{'+'.join(live)}")
+        return ', '.join(out)
 
     def now_s(self):
         return self.get_clock().now().nanoseconds * 1e-9
@@ -173,9 +202,18 @@ class LocalizationManager(Node):
         except TransformException:
             pass
         age = self.now_s() - self.last_ndt if self.last_ndt is not None else -1.0
+        now = self.now_s()
+        self.jumps = [t for t in self.jumps if now - t < 30.0]
+        conflict = self.tf_conflict()
+        if conflict and conflict != getattr(self, '_last_conflict', ''):
+            self.get_logger().error(f'TF CONFLICT: {conflict} - another node publishes the same '
+                                    'frame (old stack still running on this ROS_DOMAIN_ID?)')
+        self._last_conflict = conflict
         kv = {'state': self.state, 'score': f'{self.score:.2f}', 'iterations': f'{self.iters:.0f}',
               'exe_ms': f'{self.exe_ms:.0f}', 'age': f'{age:.1f}', 'x': f'{x:.2f}',
-              'y': f'{y:.2f}', 'yaw': f'{yaw:.1f}', 'msg': self.msg}
+              'y': f'{y:.2f}', 'yaw': f'{yaw:.1f}',
+              'tf_conflict': conflict, 'jumps': str(len(self.jumps)),
+              'msg': ('TF CONFLICT: ' + conflict) if conflict else self.msg}
         self.state_pub.publish(String(data=';'.join(f'{k}={v}' for k, v in kv.items())))
 
 

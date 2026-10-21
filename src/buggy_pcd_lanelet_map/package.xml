@@ -36,6 +36,11 @@
   <exec_depend>buggy_description</exec_depend>
   <exec_depend>velodyne_driver</exec_depend>
   <exec_depend>velodyne_pointcloud</exec_depend>
+  <exec_depend>perception_msgs</exec_depend>
+  <exec_depend>umrr_ros2_msgs</exec_depend>
+  <exec_depend>radar_fusion</exec_depend>
+  <exec_depend>umrr_ros2_driver</exec_depend>
+  <exec_depend>camera_processing</exec_depend>
   <exec_depend>rviz2</exec_depend>
   <exec_depend>buggy_rviz_plugins</exec_depend>
 

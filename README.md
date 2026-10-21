@@ -2,7 +2,7 @@
 
 One self-contained folder for the buggy's **PCD + Lanelet2 stack**: map loading, NDT/EKF
 localisation on the live VLP-16, route planning, LiDAR obstacle detection, AUTO driving over UART,
-brake calibration, map import, and a Gazebo closed-loop simulator.
+brake calibration, map import, optional radar + camera object names, and a Gazebo closed-loop simulator.
 
 Everything is a **copy**. Nothing was moved or deleted in `divagar_test1_ws`, `buggy_map_ws`
 or `autoware_ndt_ws`; they still work as before.
@@ -18,9 +18,13 @@ buggy_unified/
 │   ├── buggy_uart/              uart_bridge (ECU feedback) + UartInterface (frame encoder)
 │   ├── ground_segmentation_msgs/   SteerSpeed message
 │   ├── buggy_description/       URDF, Gazebo worlds (simulation only)
-│   └── velodyne/                VLP-16 driver + point cloud conversion
-└── data/                  maps and calibration (portable; override with BUGGY_DATA_DIR)
-    └── maps/{new_delhi_map, office_loop1, office_track_sim}/
+│   ├── velodyne/                VLP-16 driver + point cloud conversion
+│   ├── radar_fusion/ fusion_common/ fusion_visualization/ perception_msgs/   radar tracker (--radar)
+│   ├── umrr_ros2_driver/ umrr_ros2_msgs/   UMRR-A4 CAN radar driver (vendor SDK trimmed to x86_64)
+│   └── camera_processing/       camera capture + YOLOX 18-class detector (--camera)
+└── data/                  maps, models and calibration (portable; override with BUGGY_DATA_DIR)
+    ├── maps/{new_delhi_map, office_loop1, office_track_sim}/
+    └── models/yolox_s_ti_18class_ti_today_qat.onnx
 ```
 
 ## 1. Install on a machine
@@ -32,7 +36,8 @@ sudo apt install ros-humble-autoware-map-loader ros-humble-autoware-map-projecti
      ros-humble-autoware-ndt-scan-matcher ros-humble-autoware-ekf-localizer \
      ros-humble-autoware-perception-msgs ros-humble-autoware-internal-localization-msgs \
      ros-humble-autoware-internal-debug-msgs ros-humble-rviz2 ros-humble-tf-transformations \
-     ros-humble-cv-bridge python3-scipy python3-serial python3-yaml
+     ros-humble-cv-bridge python3-scipy python3-serial python3-yaml nlohmann-json3-dev
+# only for --camera:  pip install onnxruntime   (and python3-opencv)
 # only for ./buggy sim and ./buggy sim-map:
 sudo apt install ros-humble-gazebo-ros-pkgs ros-humble-gazebo-ros2-control \
      ros-humble-ackermann-steering-controller ros-humble-xacro ros-humble-joint-state-broadcaster
@@ -54,7 +59,9 @@ To move it to another computer, copy this whole folder, then run the three lines
 | `./buggy live [MAP] --drive` | Same, plus AUTO armed. Steering/stop frames are built and logged, **nothing is written** (loopback). |
 | `./buggy live [MAP] --drive --real` | AUTO armed and the UART writer **really writes to the ECU**. Asks you to type `YES`. |
 | `./buggy replay BAG [MAP] [--drive]` | The same stack on a recorded rosbag. Real writing is refused. |
-| `./buggy sim [MAP] [gui:=true]` | Gazebo vehicle + emulated ECU, closed loop. Default map `office_track_sim`. |
+| `./buggy live/replay ... --radar` | Adds radar obstacles (UMRR-A4 on CAN + radar_fusion IMM tracker). Not in a bag replay (no radar topic). |
+| `./buggy live/replay ... --camera` | Adds camera + YOLOX: LiDAR/radar obstacles get a class name instead of "unknown". |
+| `./buggy sim [MAP] [--radar] [gui:=true]` | Gazebo vehicle + emulated ECU, closed loop. Default map `office_track_sim`. `--radar` = synthetic radar. |
 | `./buggy calibrate-brake [--preset 2\|4] [--live]` | Measures the real stopping distance. Dry run unless `--live`. |
 | `./buggy add-map NAME FILE.osm [--pcd FILE.pcd]` | Creates `data/maps/NAME/` from a Vector Map Builder export and checks it. |
 | `./buggy sim-map` / `./buggy sim-map --save` | Drives the Gazebo lane and records a PCD (`--save` writes it). |
@@ -64,7 +71,9 @@ To move it to another computer, copy this whole folder, then run the three lines
 `MAP` is a folder name in `data/maps` (default `new_delhi_map`) or a full path.
 Extra `key:=value` arguments go straight to `ros2 launch`:
 `voxel_size:=0.5  ndt_rate_hz:=5.0  corridor_half_width:=1.0  feedback_port:=/dev/ttyUSB1
-sender_port:=/dev/ttyUSB1  bag_start_delay:=12.0`. Options: `--no-rviz`, `--no-detector`.
+sender_port:=/dev/ttyUSB1  bag_start_delay:=12.0  bag_rate:=0.35  can_interface:=can0
+detector_model:=<onnx>  camera_device:=/dev/video0  labeler_debug:=true`.
+Options: `--no-rviz`, `--no-detector`, `--radar`, `--camera`.
 
 ## 3. Real buggy: step by step
 
@@ -94,6 +103,50 @@ sender_port:=/dev/ttyUSB1  bag_start_delay:=12.0`. Options: `--no-rviz`, `--no-d
   writer's own watchdog (no fresh command for 0.5 s).
 * The ECU has **no deceleration command** (only red=1 and the 2/4 km/h presets), so the actual
   braking is the ECU's.
+
+### Sensor drop-outs: obstacle memory
+A LiDAR/radar obstacle that has been seen for >= 0.5 s (5 scans) and then disappears is **remembered**
+(`obstacle_memory_sec:=4`, `0` = off): the slow-down and the stop stay active, with the gap dead-reckoned from
+the buggy's own progress, until the buggy has stopped at the stop line (then held for `obstacle_memory_sec`),
+and for the next 10 s the buggy creeps at 2 km/h. A drop-out right before the stop line therefore no longer
+cancels the stop. One-scan flickers are ignored. The trade-off: an object that really left (a person walking
+away) can hold the buggy for a few seconds. The log line `AUTO: v=.. gap=.. stop_below=.. hold=.. -> RED/SLOW/GO`
+(once a second) and `/system/state` (`obs_gap`, `stop_below`) show why the buggy goes, slows or stops.
+
+## 3b. What RViz shows (Autoware-style planning display)
+
+* **Route**: the route lanelets in translucent green, the smoothed path in yellow (raw lane centre in grey).
+* **Stop / Slow Zones** (display *Planning / Stop-Slow Zones*, topic `/planning/stop_zone_marker`), drawn on the
+  road ahead of the front bumper for the nearest obstacle and for the goal:
+  * **orange** - slow zone: from here the buggy drops to the 2 km/h preset;
+  * **blue** - stop zone: the red (stop) command goes out at its start, the buggy comes to rest inside it;
+  * **light red** - keep-clear margin between the stop line and the obstacle (2.5 m);
+  * a **red wall** at the stop line with a label (`STOP: pedestrian 4.1 m`, `GOAL 3.0 m`).
+  The zones come from the same stopping model as the logic (`v*react + v^2/(2*decel)`), so they grow
+  as you calibrate the brakes. They are shown even before AUTO is engaged (preview).
+* **LiDAR Objects** (red boxes), **Radar Objects** (orange boxes, velocity arrow, `radar <class> <km/h>`),
+  **Labeled Objects** (class-coloured wireframe + `name score`, with `--camera`).
+
+## 3c. Radar and camera (optional, off by default)
+
+```bash
+./buggy live --drive --radar            # radar obstacles also stop/slow the buggy
+./buggy live --camera                   # names for the obstacles
+./buggy live --drive --radar --camera   # both
+./buggy sim --radar                     # Gazebo: synthetic radar (radar_sim); there is no camera model
+```
+* **Radar**: `umrr_ros2_driver` (CAN, `can_interface:=can0`) -> `/smart_radar/can_targets_0` -> `radar_fusion`
+  (your IMM tracker, output in the `map` frame) -> `radar_object_bridge` -> `/perception/radar_objects`.
+  The AUTO logic treats radar objects like LiDAR ones (same corridor, same stop model). A silent radar is
+  **not** a fault (the LiDAR detector is the safety heartbeat); the panel's Sensors row shows `radar STALE`.
+* **Camera**: `camera_raw_node` -> `yolox_detector_node` (18-class IDD model, `/camera/detections/array`) ->
+  `object_labeler`, which projects every LiDAR/radar obstacle box into the image (fisheye model of
+  `camera_lidar_fusion_node`, camera pose from `camera_static_tf`) and matches it to a detection by IoU.
+  It only **adds** names (to the RViz labels, the zone label and the panel message); it never removes or delays
+  an obstacle, so stopping behaves the same with the camera off, blocked or wrong.
+* CPU: the detector is limited to 2 threads and 5 frames/s (`detector_threads:=`, `detector_rate_hz:=`) so
+  NDT keeps up. On a laptop CPU, use `bag_rate:=0.35` for replay with `--camera`.
+* **Accuracy**: `base_link -> camera_link` in `camera_static_tf.py` is a rough estimate, not a calibration.
 
 ## 4. Brake calibration
 
@@ -156,6 +209,17 @@ A map folder is: `lanelet2_map.osm`, `pointcloud_map.pcd`, `map_projector_info.y
 
 ## 9. Troubleshooting
 
+* **RViz view / vehicle / map jumping or "flickering"**: the usual cause is a second publisher of the same TF
+  frame on the same ROS domain (an old stack's `kiss_icp` odometry, a bag-play container, a second `./buggy`).
+  `./buggy live|replay|sim|view|calibrate-brake` now refuses to start when other ROS nodes already run in
+  the domain (`BUGGY_FORCE=1` overrides), and while running the localisation monitor reports
+  `TF CONFLICT: base_link<-map+odom` in the log and in the panel's Localization row, and AUTO stops with
+  `FAULT: TF conflict`. The panel also shows `(n pose jumps/30s)` when the pose jumps > 0.5 m repeatedly.
+  Re-clicking *2D Pose Estimate* re-seeds the EKF and legitimately makes one jump.
+* **Other ROS programs on the same network/PC interfere** (e.g. the old stack's `kiss_icp` or a bag-play
+  container still running): they share the ROS graph, load the CPU and can publish TF. Use a private domain:
+  `ROS_DOMAIN_ID=77 ./buggy live` (also for any `./buggy ros2 ...` you run next to it).
+
 * Topics missing / `ros2 topic list` empty: a stale daemon — `./buggy` stops it for you; by hand `ros2 daemon stop`.
 * No `/velodyne_points`: LiDAR cable/IP (`enp2s0` needs 192.168.1.77/24), or a leftover driver
   holding UDP port 2368 (`./buggy live` clears it).
@@ -163,36 +227,3 @@ A map folder is: `lanelet2_map.osm`, `pointcloud_map.pcd`, `map_projector_info.y
 * NDT `degraded`/`lost`: raise `voxel_size` (0.5) or lower `ndt_rate_hz` (5), check CPU with `top`.
 * AUTO button greyed: needs a route + converged localisation (+ `--drive` and a running obstacle detector in live).
 * Logs of the calibration helper: `data/calibration_base.log`.
-
-
-## run example:
-
-cd /home/divagar/buggy_ros2/buggy_unified
-./buggy build                 # first time / after changes   (--clean for a fresh build)
-./buggy doctor                # checks software, maps, ECU serial port, LiDAR link
-./buggy maps                  # list maps
-
-# Real buggy
-./buggy live                                   # localization only; never moves the buggy
-./buggy live office_loop1                      # pick a map by folder name
-./buggy live --drive                           # AUTO armed, UART in LOOPBACK (nothing written)
-./buggy live --drive --real                    # AUTO + REAL UART writing (asks you to type YES)
-./buggy live --no-rviz  voxel_size:=0.5  ndt_rate_hz:=5.0  sender_port:=/dev/ttyUSB1
-
-# Brake calibration
-./buggy calibrate-brake --preset 4             # dry run
-./buggy calibrate-brake --preset 4 --live      # really drives, asks YES (repeat 3+ times, also --preset 2)
-
-# New map from Vector Map Builder
-./buggy add-map my_map ~/Downloads/my_map.osm [--pcd /path/file.pcd]
-./buggy live my_map
-
-# Without hardware
-./buggy view [MAP]                             # map + route + simulated AUTO
-./buggy replay /home/divagar/bags/new_delhi_bag_3 --drive
-./buggy sim                                    # Gazebo + emulated ECU
-./buggy sim-map ; ./buggy sim-map --save       # record a sim PCD
-
-./buggy stop                                   # clean Ctrl+C
-./buggy ros2 topic echo /localization/state    # any ros2 command in this environment
-
