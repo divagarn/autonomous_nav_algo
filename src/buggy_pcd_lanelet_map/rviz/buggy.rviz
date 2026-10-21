@@ -1,0 +1,171 @@
+Panels:
+  - Class: rviz_common/Displays
+    Name: Displays
+    Property Tree Widget:
+      Expanded:
+        - /Map1
+        - /Vehicle1
+        - /Planning1
+  - Class: buggy_rviz_plugins/BuggyStatePanel
+    Name: Buggy State
+  - Class: rviz_common/Tool Properties
+    Name: Tool Properties
+  - Class: rviz_common/Views
+    Name: Views
+Visualization Manager:
+  Class: ""
+  Global Options:
+    Background Color: 12; 22; 60
+    Fixed Frame: map
+    Frame Rate: 30
+  Displays:
+    - Class: rviz_common/Group
+      Name: Map
+      Enabled: true
+      Displays:
+        - Class: rviz_default_plugins/PointCloud2
+          Name: PointCloud Map
+          Enabled: true
+          Topic:
+            Value: /map/pointcloud_map_display
+            Durability Policy: Transient Local
+            Reliability Policy: Reliable
+          Style: Points
+          Size (Pixels): 2
+          Color Transformer: AxisColor
+          Axis: Z
+          Use rainbow: true
+        - Class: rviz_default_plugins/MarkerArray
+          Name: Lanelet2 Map
+          Enabled: true
+          Topic:
+            Value: /map/vector_map_marker
+            Durability Policy: Transient Local
+            Reliability Policy: Reliable
+        - Class: rviz_default_plugins/Grid
+          Name: Grid
+          Enabled: false
+    - Class: rviz_common/Group
+      Name: Vehicle
+      Enabled: true
+      Displays:
+        - Class: rviz_default_plugins/MarkerArray
+          Name: Vehicle Model
+          Enabled: true
+          Topic:
+            Value: /vehicle/marker
+        - Class: rviz_default_plugins/TF
+          Name: TF
+          Enabled: true
+          Marker Scale: 2
+          Show Names: false
+    - Class: rviz_common/Group
+      Name: Planning
+      Enabled: true
+      Displays:
+        - Class: rviz_default_plugins/MarkerArray
+          Name: Route
+          Enabled: true
+          Topic:
+            Value: /planning/route_marker
+            Durability Policy: Transient Local
+            Reliability Policy: Reliable
+        - Class: rviz_default_plugins/Path
+          Name: Route Path
+          Enabled: false
+          Topic:
+            Value: /planning/route_path
+            Durability Policy: Transient Local
+            Reliability Policy: Reliable
+        - Class: rviz_default_plugins/MarkerArray
+          Name: Detour (cyan)
+          Enabled: true
+          Topic:
+            Value: /planning/detour_marker
+        - Class: rviz_default_plugins/MarkerArray
+          Name: HOME
+          Enabled: true
+          Topic:
+            Value: /planning/home_marker
+            Durability Policy: Transient Local
+            Reliability Policy: Reliable
+        - Class: rviz_default_plugins/MarkerArray
+          Name: Stop / Slow Zones
+          Enabled: true
+          Topic:
+            Value: /planning/stop_zone_marker
+    - Class: rviz_common/Group
+      Name: Perception
+      Enabled: true
+      Displays:
+        - Class: rviz_default_plugins/PointCloud2
+          Name: Live Scan (matched)
+          Enabled: true
+          Topic:
+            Value: /localization/pointcloud_downsampled
+          Style: Flat Squares
+          Size (m): 0.12
+          Color Transformer: FlatColor
+          Color: 255; 40; 40
+          Alpha: 1
+        - Class: rviz_default_plugins/MarkerArray
+          Name: Dummy Objects
+          Enabled: true
+          Topic:
+            Value: /simulation/dummy_objects/marker
+        - Class: rviz_default_plugins/MarkerArray
+          Name: LiDAR Objects
+          Enabled: true
+          Topic:
+            Value: /perception/lidar_objects_marker
+        - Class: rviz_default_plugins/MarkerArray
+          Name: Radar Objects
+          Enabled: true
+          Topic:
+            Value: /perception/radar_objects_marker
+        - Class: rviz_default_plugins/MarkerArray
+          Name: Labeled Objects (camera names)
+          Enabled: true
+          Topic:
+            Value: /perception/objects_marker
+  Tools:
+    - Class: rviz_default_plugins/MoveCamera
+    - Class: rviz_default_plugins/Select
+    - Class: rviz_default_plugins/SetInitialPose
+      Topic:
+        Value: /initialpose
+    - Class: rviz_default_plugins/SetGoal
+      Topic:
+        Value: /goal_pose
+    - Class: buggy_rviz_plugins/AddCarTool
+    - Class: buggy_rviz_plugins/AddBusTool
+    - Class: buggy_rviz_plugins/AddPedestrianTool
+  Transformation:
+    Current:
+      Class: rviz_default_plugins/TF
+  Views:
+    Current:
+      Class: rviz_default_plugins/TopDownOrtho
+      Name: Top Down
+      Scale: 8
+      Target Frame: map
+    Saved:
+      - Class: rviz_default_plugins/TopDownOrtho
+        Name: Top Down
+        Scale: 8
+        Target Frame: map
+      - Class: rviz_default_plugins/Orbit
+        Name: Orbit
+        Distance: 60
+        Pitch: 0.8
+        Target Frame: map
+      - Class: rviz_default_plugins/ThirdPersonFollower
+        Name: Follow Vehicle
+        Distance: 25
+        Pitch: 0.7
+        Target Frame: base_link
+Window Geometry:
+  Displays:
+    collapsed: false
+  Height: 900
+  Width: 1500

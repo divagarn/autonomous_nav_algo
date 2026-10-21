@@ -1,0 +1,64 @@
+#ifndef BUGGY_RVIZ_PLUGINS__BUGGY_STATE_PANEL_HPP_
+#define BUGGY_RVIZ_PLUGINS__BUGGY_STATE_PANEL_HPP_
+
+#include <QButtonGroup>
+#include <QDoubleSpinBox>
+#include <QLabel>
+#include <QMap>
+#include <QPushButton>
+#include <QString>
+
+#include <rclcpp/rclcpp.hpp>
+#include <rviz_common/panel.hpp>
+#include <std_msgs/msg/empty.hpp>
+#include <std_msgs/msg/string.hpp>
+
+namespace buggy_rviz_plugins
+{
+
+// Autoware-style state panel: status read-outs, operation mode (Stop / Auto /
+// Local / Remote), gear, turn signal, velocity limit, emergency and
+// clear-route. Talks to buggy_pcd_lanelet_map's operation_manager via
+// /system/request (commands) and /system/state ("k=v;k=v" string).
+class BuggyStatePanel : public rviz_common::Panel
+{
+  Q_OBJECT
+
+public:
+  explicit BuggyStatePanel(QWidget * parent = nullptr);
+  void onInitialize() override;
+
+private Q_SLOTS:
+  void setState(const QString & text);
+  void onClearRoute();
+
+private:
+  void request(const QString & text);
+  QPushButton * addChoice(
+    QButtonGroup * group, QLayout * layout, const QString & label, const QString & key,
+    const QString & value);
+
+  QLabel * routing_label_;
+  QLabel * localization_label_;
+  QLabel * motion_label_;
+  QLabel * progress_label_;
+  QLabel * steering_label_;
+  QLabel * drive_label_;
+  QLabel * safety_label_;
+  QLabel * message_label_;
+  QButtonGroup * mode_group_;
+  QButtonGroup * gear_group_;
+  QButtonGroup * signal_group_;
+  QDoubleSpinBox * limit_spin_;
+  QPushButton * emergency_button_;
+  QMap<QString, QPushButton *> buttons_;  // keyed "<group>:<value>"
+
+  rclcpp::Subscription<std_msgs::msg::String>::SharedPtr state_sub_;
+  rclcpp::Publisher<std_msgs::msg::String>::SharedPtr request_pub_;
+  rclcpp::Publisher<std_msgs::msg::Empty>::SharedPtr clear_pub_;
+  rclcpp::Publisher<std_msgs::msg::String>::SharedPtr dummy_pub_;
+};
+
+}  // namespace buggy_rviz_plugins
+
+#endif  // BUGGY_RVIZ_PLUGINS__BUGGY_STATE_PANEL_HPP_

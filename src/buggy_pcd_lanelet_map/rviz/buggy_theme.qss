@@ -1,0 +1,41 @@
+/* Royal-blue RViz theme for the buggy (loaded with: rviz2 -stylesheet buggy_theme.qss).
+   Royal blue #4169E1, darker shades for panels so white text stays readable. */
+QMainWindow, QDialog, QDockWidget > QWidget { background-color: #27408B; }
+QWidget { color: #ffffff; }
+QMenuBar { background-color: #4169E1; color: #ffffff; }
+QMenuBar::item:selected { background-color: #27408B; }
+QMenu { background-color: #27408B; color: #ffffff; border: 1px solid #4169E1; }
+QMenu::item:selected { background-color: #4169E1; }
+QToolBar { background-color: #4169E1; border: none; spacing: 4px; }
+QToolButton { color: #ffffff; padding: 4px 8px; border-radius: 3px; background: transparent; }
+QToolButton:hover { background-color: #5b82f0; }
+QToolButton:checked, QToolButton:pressed { background-color: #1a2a6c; }
+QDockWidget::title { background-color: #4169E1; color: #ffffff; padding: 5px; }
+QLabel { color: #ffffff; background: transparent; }
+QGroupBox { border: 1px solid #4169E1; border-radius: 4px; margin-top: 10px; }
+QGroupBox::title { color: #d6e0ff; subcontrol-origin: margin; left: 8px; padding: 0 4px; }
+QPushButton { background-color: #4169E1; color: #ffffff; border: 1px solid #6a8cf0; border-radius: 4px; padding: 5px 10px; }
+QPushButton:hover { background-color: #5b82f0; }
+QPushButton:pressed { background-color: #1a2a6c; }
+QPushButton:disabled { background-color: #34498f; color: #9aa9d8; border-color: #34498f; }
+QListView, QTableView, QTextEdit, QPlainTextEdit {
+  background-color: #1e2f6b; color: #ffffff; alternate-background-color: #243a80;
+  selection-background-color: #4169E1; selection-color: #ffffff; border: 1px solid #4169E1; }
+/* RViz paints its display/property names itself in dark text, so the trees stay pale blue */
+QTreeView { background-color: #e6edff; color: #10204f; alternate-background-color: #d3dfff;
+  selection-background-color: #4169E1; selection-color: #ffffff; border: 1px solid #4169E1; }
+QHeaderView::section { background-color: #4169E1; color: #ffffff; border: none; padding: 3px; }
+QLineEdit, QSpinBox, QDoubleSpinBox, QComboBox {
+  background-color: #1e2f6b; color: #ffffff; border: 1px solid #4169E1; border-radius: 3px; padding: 2px 4px; }
+QComboBox QAbstractItemView { background-color: #1e2f6b; color: #ffffff; selection-background-color: #4169E1; }
+QCheckBox, QRadioButton { color: #ffffff; background: transparent; }
+QScrollBar:vertical { background: #1e2f6b; width: 12px; }
+QScrollBar::handle:vertical { background: #4169E1; border-radius: 5px; min-height: 24px; }
+QScrollBar:horizontal { background: #1e2f6b; height: 12px; }
+QScrollBar::handle:horizontal { background: #4169E1; border-radius: 5px; min-width: 24px; }
+QScrollBar::add-line, QScrollBar::sub-line { width: 0; height: 0; }
+QTabBar::tab { background: #27408B; color: #d6e0ff; padding: 5px 10px; }
+QTabBar::tab:selected { background: #4169E1; color: #ffffff; }
+QSplitter::handle { background-color: #4169E1; }
+QStatusBar { background-color: #4169E1; color: #ffffff; }
+QToolTip { background-color: #1a2a6c; color: #ffffff; border: 1px solid #4169E1; }
