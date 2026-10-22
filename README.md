@@ -136,6 +136,98 @@ cancels the stop. One-scan flickers are ignored. The trade-off: an object that r
 away) can hold the buggy for a few seconds. The log line `AUTO: v=.. gap=.. stop_below=.. hold=.. -> RED/SLOW/GO`
 (once a second) and `/system/state` (`obs_gap`, `stop_below`) show why the buggy goes, slows or stops.
 
+### C++ runtime core (`buggy_core`) - migration from Python
+Policy: **C++ for the runtime core, Python for non-runtime work** (tools, CLI, map import, calibration, simulation, tests).
+The C++ nodes are drop-in replacements for the Python nodes of the same name (same topics, parameters and output);
+the Python versions stay as the reference and fallback. Select with `--cpp` (or `core:=cpp`) on
+`live` / `replay` / `sim` / `calibrate-brake`.
+
+| Node | C++ (`buggy_core`) | Python (reference) |
+|---|---|---|
+| `uart_writer` (only serial writer, watchdog, final STOP) | done | `buggy_pcd_lanelet_map` |
+| `lidar_obstacle_detector` | done | `buggy_pcd_lanelet_map` |
+| `operation_manager` (AUTO control loop, **live mode only**: real buggy, Gazebo, replay) | done (the RViz-only simulated vehicle, `view`, stays in Python) | `buggy_pcd_lanelet_map` |
+| `segment_ground` (the `segment` backend used on the vehicle), `self_hit_filter` | done (the GPU / RANSAC backends stay Python-only, not used live) | `buggy_perception` |
+| `wheel_odometry` (`/wheel_uart` -> `/odom`) | done | `buggy_perception` |
+| `uart_bridge` (ECU feedback reader, `/wheel_uart`) | done | `buggy_uart` |
+| `route_planner` (goal -> lane route, smoothing, HOME / loop) | done (works in `view`, `live`, `replay`, `sim`) | `buggy_pcd_lanelet_map` |
+| `avoidance_planner` (detour around a blocked lane, lane + LiDAR free space) | done | `buggy_pcd_lanelet_map` |
+| `localization_manager` (click -> NDT align -> seed EKF, state, TF-conflict and pose-jump watchdog) | done | `buggy_pcd_lanelet_map` |
+| `lidar_preprocess` (NDT input: crop + voxel downsample), `odom_to_twist`, `velodyne_static_tf` | done | `buggy_pcd_lanelet_map`, `buggy_perception` |
+
+**The whole real-buggy runtime path is now C++** (`./buggy live --cpp`): 11 nodes of `buggy_core` plus the Autoware C++ nodes
+(NDT, EKF, map loaders) and the Velodyne driver. What stays Python on purpose: the RViz-only simulated vehicle (`view`),
+tools and calibration, the simulation helpers, map-display helpers (`lanelet_marker_publisher`, `map_display_cloud`,
+`initial_pose_vehicle`, `dummy_objects`), and the optional radar / camera nodes (`radar_object_bridge`, `object_labeler`,
+colleague's `radar_fusion` and detector).
+
+Verification of what is ported (the Python code generates the golden data, `src/buggy_core/tools/golden/gen_golden.py`):
+* `colcon test --packages-select buggy_core`: 72 UART frames **byte-identical** to `UartInterface.create_message`, LiDAR
+  clustering identical to the Python algorithm on the same points, corridor / height filters.
+* `tools/actuation/test_uart_pty.py <package>` (pseudo-terminal, no hardware): commands -> bytes, watchdog -> STOP, SIGINT -> final STOP.
+  Both implementations pass; the C++ one sends 3 final STOP frames and exits 0 (the Python one 1 frame, exit code 1).
+* Bag replay, both detectors on the same scans: 124 of 124 messages with the same objects, worst position / size
+  difference 0.04 m (float32 vs double at cell boundaries).
+* `operation_manager`: tracking maths (nearest-point match, pure pursuit, cross-track, obstacle-in-corridor distance,
+  stop distance) **bit-identical** to the Python methods on 60 poses / 960 object checks; behaviour tests for GO / SLOW /
+  STOP, obstacle memory (the lost-obstacle bug), detector / pose / localisation faults, arrival and brake-calibration hand-over.
+* Bag replay with both `operation_manager` versions running side by side on the same TF / objects / requests
+  (C++ remapped to `/cpp/...`): the **same GO / SLOW / RED sequence at the same instants**, same gap values, same messages.
+* Ground filter + self-hit filter on the same 332 real VLP-16 scans from the bag (C++ side by side with Python): ground,
+  non-ground and filtered clouds **identical point for point, including the colour values**; the synthetic golden set has 0 differences.
+* `wheel_odometry`: 1,199 integration steps through the real Python callback (fake clock) vs C++: worst position difference 3.6e-15 m.
+  Bag replay side by side: every C++ (speed, yaw-rate) pair is also published by Python, same distance travelled (33.49 m).
+  Note: in a replay the Python node's first `dt` spans the jump from clock 0 to bag time, so its /odom pose starts with a huge
+  offset (x ~ 1e9); only the twist reaches the EKF, so localisation is not affected, and on the real buggy there is no such jump.
+* `route_planner`: on all 4 maps in `data/maps` - lane geometry, successor lists (including the ring links), 56 random
+  start/goal plans (same lane chains, same smoothed paths, worst point difference 8e-14 m) and 12 one-lap paths identical to Python.
+  Node level (`view`, C++ beside Python, same inputs): paths, status texts and markers identical for goals, HOME, `loop:1`, `loop:2`,
+  a bad lap count, clear route (worst path difference 1e-13).
+* `avoidance_planner`: 56 detour scenes from real maps (small / vehicle-sized obstacles, wide barriers, with and without the
+  lane model and LiDAR grids): 39 detours and 17 refusals - same success flag, same refusal text, same side / offset / ib, every
+  detour point **bit-identical** (difference 0). The detour result applied by `operation_manager` (path splice, status, message)
+  matches the Python `on_avoid_result` on 40 results (30 spliced detours).
+  Closed loop in `view small_loop --cpp` (C++ route + avoidance planner): "Detour right by 1.5 m", passes the pedestrian at 1.5 m,
+  "detour finished: back on the lanelet path", reaches the goal - same offset as the Python planner.
+  Speed: about the same as Python (tens to a few hundred ms per request); planning on request is not time-critical.
+* `localization_manager`: 40 random event sequences (TF edges from several parents, NDT poses, scores, state changes) through
+  the real Python methods vs C++: 403 `/localization/state` texts identical, covering converged / degraded / lost / initialized,
+  99 with a TF conflict and 296 with pose jumps. Live on the bag replay: align (reliable=True), EKF and NDT activated, `converged`;
+  a second publisher of `base_link` (fake odometry) is reported as `base_link<-map+odom` with the jump count and clears again.
+* `uart_bridge`: 60 byte streams cut at random places (valid packets, garbage, bad end bytes) through the real Python
+  `timer_callback` vs the C++ parser: 758 packets identical, in order, with the same resync behaviour. Pseudo-terminal test
+  `tools/actuation/test_feedback_pty.py <package>` (the test plays the ECU): C++ passes all checks (decode, garbage, split packet,
+  +-20 deg clamp, 100 packets at 50 Hz, adapter unplugged); the Python bridge lost 1 of 100 packets at 50 Hz in one run
+  (its serial read blocks up to 50 ms; the C++ node polls without blocking).
+  Not tested on the real adapter (no hardware here).
+* `lidar_preprocess`: 12 synthetic scans (NaN / inf beams, the buggy's own body, voxel sizes 0.2 - 1.0 m, one too sparse) through
+  the real Python `on_cloud` vs C++: 29,250 voxel centroids **bit-identical**. On the real bag (C++ beside Python, same scans):
+  283 of 283 downsampled clouds identical; `odom_to_twist`: 337 of 337 messages identical (frame, twist, covariance);
+  `velodyne_static_tf`: same transform (base_link -> velodyne, 1.73 / 0 / 1.00 m, no rotation).
+* Replay with `--drive --cpp`: the same GO -> SLOW -> RED sequence (stop at 4.9 m with a 5.0 m threshold).
+* **Timing:** the Python `uart_writer` was *not* a timing problem: frame interval at 10 Hz, worst case 103 ms idle, 108 ms
+  with every core busy, 113 ms at twice the cores - C++ is the same (103 / 108 / 116 ms). The reasons to port it are
+  determinism guarantees, no interpreter on the vehicle and easier safety review, not measured speed.
+
+
+### Ground is not an obstacle (ground-aware detector)
+The detector used to measure "height above ground" from a flat plane 1.0 m below the sensor. On a slope, over a bump, or
+while the buggy pitches under braking, road surface then rose above the 0.2 m threshold and became an obstacle. Now (default on,
+Python and C++ detectors alike):
+* the ground points of the same scan (`/ground_points`) give a **local ground height**: median per 0.5 m cell, smoothed over
+  3 m; where no ground point is near (far range) a **plane fitted to all ground points**; only if there is no ground at all the old
+  flat plane. Obstacle points must be `ground_min_height` (0.30 m) above that local ground.
+* a cluster that is both **thin** (vertical extent < `thin_extent` 0.08 m) and **low** (< `low_height` 0.5 m above ground) is one
+  beam ring on the road, not an object, and is dropped (`reject_thin_low`).
+Switches: `ground_aware:=false` (old behaviour), `reject_thin_low:=false` (needed if you must see single-ring objects below
+0.5 m such as cones). Parameters of the node: `ground_min_height`, `thin_extent`, `low_height`, `ground_max_age`.
+Tested: synthetic slopes (a 4 deg rise with the far ground leaked into the non-ground cloud is no longer an obstacle, a box, a wall and a
+0.45 m cone on the slope still are, with their heights corrected), 60 random scenes Python vs C++ identical, and on the real bag
+(Python and C++ detector side by side, 249 scans, same objects). Side effect to know: the real ground in that bag is not at the
+assumed -1.0 m (about -0.75 m 3-6 m ahead, -1.4 m 6-12 m ahead), so the ground-aware height also reports real far / low objects the flat
+plane used to hide (+93 clusters in 868 scans, median 1.4 m tall). Record a bag at the place where the false obstacles
+appeared (`ros2 bag record /velodyne_points /wheel_uart /tf /tf_static`) to tune the three thresholds on that data.
+
 ### Going around a blocked lane (detour / obstacle avoidance)
 `--avoid` (default **on** in `view`/`sim`, **off** in `live`/`replay`; `--no-avoid` turns it off).
 If an obstacle has blocked the route for **5 s** (`avoid_after_sec`), `operation_manager` asks the

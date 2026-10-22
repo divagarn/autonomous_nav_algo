@@ -34,6 +34,7 @@ live / replay options
   --radar        add radar obstacles (umrr radar on CAN + radar_fusion; Gazebo: synthetic radar)
   --avoid        go around an obstacle that blocks the lane for >5 s (default ON in view/sim, OFF live/replay);
                  --no-avoid turns it off
+  --cpp          run the C++ runtime nodes (uart_writer, uart_bridge, wheel_odometry, lidar_preprocess, odom_to_twist, velodyne_static_tf, localization_manager, route_planner, avoidance_planner, segment_ground, self_hit_filter, lidar_obstacle_detector, operation_manager) from buggy_core
   --camera       camera + object-detection model: obstacles get a class name instead of "unknown"
                  (detector_model:=<onnx>  camera_device:=/dev/video0  can_interface:=can0
                  labeler_debug:=true publishes /perception/labeler_debug/image)
@@ -106,6 +107,7 @@ case "$cmd" in
     for m in serial scipy numpy yaml; do chk "python3 $m" "python3 -c 'import $m'" "pip/apt: pyserial scipy numpy pyyaml"; done
     echo "This package"
     chk "built (install/)" "ros2 pkg prefix $PKG" "./buggy build"
+    chk "C++ runtime core built (buggy_core, for --cpp)" "ros2 pkg prefix buggy_core" "./buggy build"
     echo "Maps (data/maps)"
     for d in "$BUGGY_DATA_DIR"/maps/*/; do
       n=$(basename "$d"); good=1
@@ -132,7 +134,7 @@ case "$cmd" in
     while [ $# -gt 0 ]; do
       case "$1" in
         --no-rviz) ARGS+=(rviz:=false) ;;
-        --avoid) ARGS+=(avoidance:=true) ;; --no-avoid) ARGS+=(avoidance:=false) ;;
+        --avoid) ARGS+=(avoidance:=true) ;; --no-avoid) ARGS+=(avoidance:=false) ;; --cpp) ARGS+=(core:=cpp) ;;
         *:=*) ARGS+=("$1") ;;
         -*) echo "unknown option $1"; exit 1 ;;
         *) MAP="$1" ;;
@@ -150,7 +152,7 @@ case "$cmd" in
         --drive) DRIVE=1 ;; --real) REAL=1 ;;
         --no-rviz) ARGS+=(rviz:=false) ;; --no-detector) ARGS+=(obstacle_detection:=false) ;;
         --radar) ARGS+=(radar:=true) ;; --camera) ARGS+=(camera:=true) ;;
-        --avoid) ARGS+=(avoidance:=true) ;; --no-avoid) ARGS+=(avoidance:=false) ;;
+        --avoid) ARGS+=(avoidance:=true) ;; --no-avoid) ARGS+=(avoidance:=false) ;; --cpp) ARGS+=(core:=cpp) ;;
         *:=*) ARGS+=("$1") ;;
         -*) echo "unknown option $1"; exit 1 ;;
         *) MAP="$1" ;;
@@ -178,7 +180,7 @@ case "$cmd" in
     while [ $# -gt 0 ]; do
       case "$1" in
         --radar) ARGS+=(radar:=true) ;; --camera) ARGS+=(camera:=true) ;; --no-rviz) ARGS+=(rviz:=false) ;;
-        --avoid) ARGS+=(avoidance:=true) ;; --no-avoid) ARGS+=(avoidance:=false) ;;
+        --avoid) ARGS+=(avoidance:=true) ;; --no-avoid) ARGS+=(avoidance:=false) ;; --cpp) ARGS+=(core:=cpp) ;;
         *:=*) ARGS+=("$1") ;;
         -*) echo "unknown option $1"; exit 1 ;;
         *) MAP="$1" ;;
@@ -201,6 +203,7 @@ case "$cmd" in
     while [ $# -gt 0 ]; do
       case "$1" in
         --live) LIVE=1; LB=false; PASS+=(--live) ;;
+        --cpp) EXTRA+=(core:=cpp) ;;
         *:=*) EXTRA+=("$1") ;;
         *) PASS+=("$1") ;;
       esac; shift

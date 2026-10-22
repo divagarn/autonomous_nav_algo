@@ -115,16 +115,23 @@ def launch_setup(context):
                     sim_time],
     )
 
+    # core:=cpp: C++ route_planner (any mode: view, live, replay, sim)
     route_planner = Node(
-        package='buggy_pcd_lanelet_map',
+        package=('buggy_core' if LaunchConfiguration('core').perform(context) == 'cpp'
+                 else 'buggy_pcd_lanelet_map'),
         executable='route_planner',
         name='route_planner',
         output='screen',
         parameters=[{'lanelet2_map_path': osm}, sim_time],
     )
 
+    # core:=cpp and live: the C++ operation_manager of buggy_core (the simulated-vehicle branch,
+    # live:=false, stays in Python)
+    om_pkg = ('buggy_core' if LaunchConfiguration('core').perform(context) == 'cpp'
+              and LaunchConfiguration('live').perform(context).lower() == 'true'
+              else 'buggy_pcd_lanelet_map')
     operation_manager = Node(
-        package='buggy_pcd_lanelet_map',
+        package=om_pkg,
         executable='operation_manager',
         name='operation_manager',
         output='screen',
@@ -205,7 +212,9 @@ def launch_setup(context):
     if LaunchConfiguration('avoidance').perform(context).lower() == 'true':
         # detour planner: lanes + (on the real/Gazebo stack) LiDAR free space
         nodes.append(Node(
-            package='buggy_pcd_lanelet_map', executable='avoidance_planner',
+            package=('buggy_core' if LaunchConfiguration('core').perform(context) == 'cpp'
+                     else 'buggy_pcd_lanelet_map'),
+            executable='avoidance_planner',
             name='avoidance_planner', output='screen',
             parameters=[{'lanelet2_map_path': osm,
                          'use_sensors': (LaunchConfiguration('live').perform(context).lower() == 'true'
@@ -228,6 +237,7 @@ def generate_launch_description():
             description='Map NAME (folder under <data>/maps) or full path of a folder with '
                         'pointcloud_map.pcd, lanelet2_map.osm, map_projector_info.yaml'),
         DeclareLaunchArgument('rviz', default_value='true'),
+        DeclareLaunchArgument('core', default_value='python', description='python | cpp (live only)'),
         DeclareLaunchArgument('live', default_value='false',
                               description='true: pose from NDT localization (no click TF/sim)'),
         DeclareLaunchArgument('use_sim_time', default_value='false'),

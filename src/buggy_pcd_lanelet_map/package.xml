@@ -36,6 +36,7 @@
   <exec_depend>buggy_description</exec_depend>
   <exec_depend>velodyne_driver</exec_depend>
   <exec_depend>velodyne_pointcloud</exec_depend>
+  <exec_depend>buggy_core</exec_depend>
   <exec_depend>perception_msgs</exec_depend>
   <exec_depend>umrr_ros2_msgs</exec_depend>
   <exec_depend>radar_fusion</exec_depend>

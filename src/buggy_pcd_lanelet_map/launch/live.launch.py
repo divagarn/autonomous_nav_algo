@@ -43,6 +43,9 @@ def launch_setup(context):
     gz = LaunchConfiguration('gazebo').perform(context).lower() == 'true'
     sim = replay or gz
     t = {'use_sim_time': sim}
+    # runtime core: the C++ nodes of buggy_core replace the Python ones of the same name
+    core_pkg = ('buggy_core' if LaunchConfiguration('core').perform(context) == 'cpp'
+                else 'buggy_pcd_lanelet_map')
 
     ndt_params = os.path.join(get_package_share_directory('autoware_ndt_scan_matcher'),
                               'config', 'ndt_scan_matcher.param.yaml')
@@ -60,6 +63,7 @@ def launch_setup(context):
             'rviz_maximize': LaunchConfiguration('rviz_maximize'),
             'theme': LaunchConfiguration('theme'),
             'live': 'true',
+            'core': LaunchConfiguration('core'),
             'drive': LaunchConfiguration('drive'),
             'obstacle_detection': LaunchConfiguration('obstacle_detection'),
             'radar': LaunchConfiguration('radar'),
@@ -74,9 +78,11 @@ def launch_setup(context):
 
     # ---- sensors -----------------------------------------------------
     if not gz:    # Gazebo's URDF already provides base_link -> lidar_mount_link
-        actions.append(Node(package='buggy_perception', executable='velodyne_static_tf',
+        actions.append(Node(package=('buggy_core' if core_pkg == 'buggy_core' else 'buggy_perception'),
+                            executable='velodyne_static_tf',
                             name='velodyne_static_tf', output='screen', parameters=[t]))
-    actions.append(Node(package='buggy_perception', executable='wheel_odometry',
+    actions.append(Node(package=('buggy_core' if core_pkg == 'buggy_core' else 'buggy_perception'),
+                       executable='wheel_odometry',
                        name='wheel_odometry', output='screen',
                        parameters=[{'publish_tf': False, **t}]))
     if gz:
@@ -124,13 +130,15 @@ def launch_setup(context):
                 'view_direction': 0.0, 'fixed_frame': '', 'target_frame': '',
                 'organize_cloud': True}]))
         actions.append(Node(
-            package='buggy_uart', executable='uart_bridge', name='uart_bridge',
+            package=('buggy_core' if core_pkg == 'buggy_core' else 'buggy_uart'),
+            executable='uart_bridge', name='uart_bridge',
             output='screen',
             parameters=[{'port': LaunchConfiguration('feedback_port'), 'baud': 115200}]))
 
     # ---- localization --------------------------------------------------
     actions.append(Node(
-        package='buggy_pcd_lanelet_map', executable='lidar_preprocess',
+        package=('buggy_core' if core_pkg == 'buggy_core' else 'buggy_pcd_lanelet_map'),
+        executable='lidar_preprocess',
         name='lidar_preprocess', output='screen',
         parameters=[{'voxel_size': ParameterValue(LaunchConfiguration('voxel_size'),
                                                   value_type=float),
@@ -139,7 +147,8 @@ def launch_setup(context):
                      'max_rate_hz': ParameterValue(LaunchConfiguration('ndt_rate_hz'),
                                                    value_type=float), **t}]))
     actions.append(Node(
-        package='buggy_pcd_lanelet_map', executable='odom_to_twist', name='odom_to_twist',
+        package=('buggy_core' if core_pkg == 'buggy_core' else 'buggy_pcd_lanelet_map'),
+        executable='odom_to_twist', name='odom_to_twist',
         output='screen',
         parameters=[{'input_topic': '/odom', 'output_topic': '/twist_with_covariance', **t}]))
     actions.append(Node(
@@ -184,23 +193,30 @@ def launch_setup(context):
             ('pcd_loader_service', '/map/get_differential_pointcloud_map'),
         ])]))
     actions.append(Node(
-        package='buggy_pcd_lanelet_map', executable='localization_manager',
+        package=('buggy_core' if core_pkg == 'buggy_core' else 'buggy_pcd_lanelet_map'),
+        executable='localization_manager',
         name='localization_manager', output='screen', parameters=[t]))
     # ---- obstacle detection: ground removal (CPU 'segment' backend, no torch) ->
     # vehicle self-hit filter -> clustering inside the route corridor
     if LaunchConfiguration('obstacle_detection').perform(context).lower() == 'true':
         actions.append(Node(
-            package='buggy_perception', executable='segment_ground', name='segment_ground',
+            package=('buggy_core' if core_pkg == 'buggy_core' else 'buggy_perception'),
+            executable='segment_ground', name='segment_ground',
             output='screen', parameters=[t],
             additional_env={'SEGMENT_GROUND_METHOD': 'segment'}))
         actions.append(Node(
-            package='buggy_perception', executable='self_hit_filter', name='self_hit_filter',
+            package=('buggy_core' if core_pkg == 'buggy_core' else 'buggy_perception'),
+            executable='self_hit_filter', name='self_hit_filter',
             output='screen', parameters=[t]))
         actions.append(Node(
-            package='buggy_pcd_lanelet_map', executable='lidar_obstacle_detector',
+            package=core_pkg, executable='lidar_obstacle_detector',
             name='lidar_obstacle_detector', output='screen',
             # Gazebo: base_link is the chassis centre, lidar 0.93 m ahead of it
             parameters=[{**t, **({'sensor_x': 0.93} if gz else {}),
+                         'ground_aware': ParameterValue(
+                             LaunchConfiguration('ground_aware'), value_type=bool),
+                         'reject_thin_low': ParameterValue(
+                             LaunchConfiguration('reject_thin_low'), value_type=bool),
                          'corridor_half_width': ParameterValue(
                              LaunchConfiguration('corridor_half_width'), value_type=float)}]))
 
@@ -279,7 +295,7 @@ def launch_setup(context):
         if replay and not loopback:
             raise RuntimeError('refusing real UART write while replaying a bag')
         actions.append(Node(
-            package='buggy_pcd_lanelet_map', executable='uart_writer', name='uart_writer',
+            package=core_pkg, executable='uart_writer', name='uart_writer',
             output='screen',
             parameters=[{'port': LaunchConfiguration('sender_port'), 'baudrate': 115200,
                          'loopback': loopback, **t}]))
@@ -314,6 +330,15 @@ def generate_launch_description():
                                           'last seen (0 = off); covers sensor drop-outs near the bumper'),
         DeclareLaunchArgument('map_display_voxel', default_value='0.3',
                               description='map copy for RViz, one point per voxel [m] (0 = full map)'),
+        DeclareLaunchArgument('ground_aware', default_value='true',
+                              description='obstacle height above the LOCAL ground (slope / pitch safe); '
+                                          'false = old flat reference plane'),
+        DeclareLaunchArgument('reject_thin_low', default_value='true',
+                              description='drop clusters that are one thin low beam ring (road bumps); '
+                                          'false if you need very low objects such as cones'),
+        DeclareLaunchArgument('core', default_value='python',
+                              description='python | cpp: run the C++ runtime nodes (uart_writer, '
+                                          'lidar_obstacle_detector) from buggy_core instead of the Python ones'),
         DeclareLaunchArgument('avoidance', default_value='false',
                               description='go around an obstacle that blocks the lane for >5 s '
                                           '(leaves the lane centre; off by default on the real buggy)'),
