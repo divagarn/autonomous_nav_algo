@@ -1,0 +1,38 @@
+<?xml version="1.0"?>
+<?xml-model href="http://download.ros.org/schema/package_format3.xsd" schematypens="http://www.w3.org/2001/XMLSchema"?>
+<package format="3">
+  <name>buggy_core</name>
+  <version>0.1.0</version>
+  <description>
+    C++ runtime core of the buggy stack (the safety-relevant nodes): operation manager (live mode), UART writer with watchdog and
+    LiDAR obstacle detector. Drop-in replacements for the Python nodes of the same name in
+    buggy_pcd_lanelet_map (same topics, parameters and behaviour); the Python versions stay as the
+    reference and fallback. Select with  core:=cpp  (./buggy ... --cpp).
+  </description>
+  <maintainer email="n.divagar18@gmail.com">divagar</maintainer>
+  <license>Apache-2.0</license>
+
+  <buildtool_depend>ament_cmake</buildtool_depend>
+
+  <depend>rclcpp</depend>
+  <depend>std_msgs</depend>
+  <depend>nav_msgs</depend>
+  <depend>sensor_msgs</depend>
+  <depend>geometry_msgs</depend>
+  <depend>visualization_msgs</depend>
+  <depend>tf2</depend>
+  <depend>tf2_ros</depend>
+  <depend>autoware_perception_msgs</depend>
+  <depend>ground_segmentation_msgs</depend>
+  <depend>std_srvs</depend>
+  <depend>tf2_msgs</depend>
+  <depend>autoware_internal_debug_msgs</depend>
+  <depend>autoware_internal_localization_msgs</depend>
+  <depend>nlohmann-json-dev</depend>
+
+  <test_depend>ament_cmake_gtest</test_depend>
+
+  <export>
+    <build_type>ament_cmake</build_type>
+  </export>
+</package>

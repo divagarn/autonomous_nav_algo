@@ -32,10 +32,23 @@ from launch.substitutions import LaunchConfiguration
 from launch_ros.actions import Node
 from launch_ros.parameter_descriptions import ParameterValue
 
-from buggy_pcd_lanelet_map.paths import resolve_map
+from buggy_pcd_lanelet_map.paths import config_files, resolve_map
+
+
+def opt(context, **spec):
+    """{param: value} only for launch arguments the user really gave; an empty argument means
+    'take the value from config/buggy_params.yaml'."""
+    out = {}
+    for param, (arg, typ) in spec.items():
+        v = LaunchConfiguration(arg).perform(context)
+        if v != '':
+            out[param] = (v.lower() == 'true') if typ is bool else typ(v)
+    return out
 
 
 def launch_setup(context):
+    # YAML parameter files: config/buggy_params.yaml, then the user's params:=FILE; launch arguments win
+    cfg = config_files(LaunchConfiguration('params').perform(context))
     map_path = resolve_map(LaunchConfiguration('map_path').perform(context))
     pcd = os.path.join(map_path, 'pointcloud_map.pcd')
     osm = os.path.join(map_path, 'lanelet2_map.osm')
@@ -122,7 +135,7 @@ def launch_setup(context):
         executable='route_planner',
         name='route_planner',
         output='screen',
-        parameters=[{'lanelet2_map_path': osm}, sim_time],
+        parameters=[*cfg, {'lanelet2_map_path': osm}, sim_time],
     )
 
     # core:=cpp and live: the C++ operation_manager of buggy_core (the simulated-vehicle branch,
@@ -135,23 +148,23 @@ def launch_setup(context):
         executable='operation_manager',
         name='operation_manager',
         output='screen',
-        parameters=[{'live': live,
+        parameters=[*cfg,
+                    {'live': live,
                      'base_link_at_center': ParameterValue(
                          LaunchConfiguration('base_link_at_center'), value_type=bool),
                      'avoid_enabled': ParameterValue(
                          LaunchConfiguration('avoidance'), value_type=bool),
-                     'obstacle_memory_sec': ParameterValue(
-                         LaunchConfiguration('obstacle_memory_sec'), value_type=float),
                      'radar_enabled': ParameterValue(
                          LaunchConfiguration('radar'), value_type=bool),
                      'camera_enabled': ParameterValue(
                          LaunchConfiguration('camera'), value_type=bool),
-                     'corridor_half_width': ParameterValue(
-                         LaunchConfiguration('corridor_half_width'), value_type=float),
                      'drive_enabled': ParameterValue(LaunchConfiguration('drive'),
                                                      value_type=bool),
                      'require_obstacle_detector': ParameterValue(
-                         LaunchConfiguration('obstacle_detection'), value_type=bool)},
+                         LaunchConfiguration('obstacle_detection'), value_type=bool),
+                     # given on the command line = wins over the YAML, empty = YAML value
+                     **opt(context, obstacle_memory_sec=('obstacle_memory_sec', float),
+                           corridor_half_width=('corridor_half_width', float))},
                     sim_time],
     )
 
@@ -168,8 +181,7 @@ def launch_setup(context):
         executable='map_display_cloud',
         name='map_display_cloud',
         output='screen',
-        parameters=[{'voxel_size': ParameterValue(LaunchConfiguration('map_display_voxel'),
-                                                  value_type=float)}, sim_time],
+        parameters=[*cfg, opt(context, voxel_size=('map_display_voxel', float)), sim_time],
     )
 
     # splash screen while RViz loads (rviz2 -s) and the royal-blue Qt theme (rviz2 -stylesheet; Qt
@@ -216,7 +228,7 @@ def launch_setup(context):
                      else 'buggy_pcd_lanelet_map'),
             executable='avoidance_planner',
             name='avoidance_planner', output='screen',
-            parameters=[{'lanelet2_map_path': osm,
+            parameters=[*cfg, {'lanelet2_map_path': osm,
                          'use_sensors': (LaunchConfiguration('live').perform(context).lower() == 'true'
                                          if LaunchConfiguration('avoid_use_sensors').perform(context) == 'auto'
                                          else LaunchConfiguration('avoid_use_sensors').perform(context).lower() == 'true')},
@@ -241,9 +253,12 @@ def generate_launch_description():
         DeclareLaunchArgument('live', default_value='false',
                               description='true: pose from NDT localization (no click TF/sim)'),
         DeclareLaunchArgument('use_sim_time', default_value='false'),
-        DeclareLaunchArgument('obstacle_memory_sec', default_value='4.0',
-                              description='keep a blocking sensor obstacle this long after it was last seen'),
-        DeclareLaunchArgument('map_display_voxel', default_value='0.3',
+        DeclareLaunchArgument('params', default_value='',
+                              description='your own parameter YAML (overrides config/buggy_params.yaml)'),
+        DeclareLaunchArgument('obstacle_memory_sec', default_value='',
+                              description='keep a blocking sensor obstacle this long after it was last seen '
+                                          '(empty = value in config/buggy_params.yaml)'),
+        DeclareLaunchArgument('map_display_voxel', default_value='',
                               description='RViz shows a copy of the map thinned to one point per this '
                                           'voxel [m] (0 = full map); stops the map shimmering'),
         DeclareLaunchArgument('avoid_use_sensors', default_value='auto',
@@ -252,7 +267,7 @@ def generate_launch_description():
                               description='go around an obstacle that blocks the lane for >5 s'),
         DeclareLaunchArgument('radar', default_value='false'),
         DeclareLaunchArgument('camera', default_value='false'),
-        DeclareLaunchArgument('corridor_half_width', default_value='1.25',
+        DeclareLaunchArgument('corridor_half_width', default_value='',
                               description='obstacles within this distance of the route centre '
                                           'line stop the vehicle (vehicle half width 0.72 + clearance)'),
         DeclareLaunchArgument('base_link_at_center', default_value='false',

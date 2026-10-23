@@ -22,20 +22,20 @@ class VelodyneStaticTFBroadcaster(Node):
         static_transformStamped = TransformStamped()
 
         static_transformStamped.header.stamp = self.get_clock().now().to_msg()
-        static_transformStamped.header.frame_id = "base_link"   # parent frame
-        static_transformStamped.child_frame_id = "velodyne"     # child frame
+        # configurable (config/buggy_params.yaml, section velodyne_static_tf)
+        p = self.declare_parameter
+        static_transformStamped.header.frame_id = p('parent_frame', 'base_link').value   # parent frame
+        static_transformStamped.child_frame_id = p('child_frame', 'velodyne').value      # child frame
 
-        # Translation: x=1.73m (from rear axle to LiDAR), y=0, z=1.00m (height from ground)
-        static_transformStamped.transform.translation.x = 1.73  # 173cm from vehicle rear axle to LiDAR
-        static_transformStamped.transform.translation.y = 0.0   # Centered on vehicle
-        static_transformStamped.transform.translation.z = 1.00  # 100cm height from ground
+        # Translation: x = rear axle -> LiDAR, y = 0 centred, z = height of the LiDAR above the ground
+        static_transformStamped.transform.translation.x = float(p('x', 1.73).value)
+        static_transformStamped.transform.translation.y = float(p('y', 0.0).value)
+        static_transformStamped.transform.translation.z = float(p('z', 1.00).value)
 
         # Euler angles (roll, pitch, yaw) in radians
-        roll = 0.0
-        # pitch = 0.436332
-        # pitch  = 0.296706
-        pitch = 0.0
-        yaw = 0.0
+        roll = float(p('roll', 0.0).value)
+        pitch = float(p('pitch', 0.0).value)      # e.g. 0.296706 for a LiDAR tilted down 17 deg
+        yaw = float(p('yaw', 0.0).value)
         # Convert Euler to quaternion
         quat = quaternion_from_euler(roll, pitch, yaw)
 
@@ -47,7 +47,10 @@ class VelodyneStaticTFBroadcaster(Node):
         # Broadcast once (static transform)
         broadcaster.sendTransform(static_transformStamped)
 
-        self.get_logger().info("Broadcasted static transform from base_link to velodyne: x=1.73m, z=1.00m")
+        tr = static_transformStamped.transform.translation
+        self.get_logger().info(
+            f"Broadcasted static transform from {static_transformStamped.header.frame_id} to "
+            f"{static_transformStamped.child_frame_id}: x={tr.x:.2f}m, z={tr.z:.2f}m")
 
 
 def main(args=None):

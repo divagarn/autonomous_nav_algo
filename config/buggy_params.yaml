@@ -1,0 +1,206 @@
+# ============================================================================================
+#  buggy_params.yaml - every tuning parameter of the buggy nodes in ONE place.
+#
+#  * Python and C++ nodes (./buggy ... --cpp) read the same file: the node names and parameter
+#    names are identical.
+#  * The values below ARE the built-in defaults. Edit a value here and restart ./buggy - no rebuild.
+#  * Your own file:  ./buggy live --params my_params.yaml   (only the keys you list; it overrides this file)
+#  * Command line wins over both:  ./buggy live corridor_half_width:=1.0 voxel_size:=0.5
+#  * Check the file:  ./buggy params-check   (unknown names, wrong types, values that must agree)
+#  * Floats need a decimal point (5.0, not 5): a 5 would be read as an integer and refused.
+#
+#  NOT in here (they are mode switches or wiring, set by the ./buggy options): live, drive_enabled,
+#  avoid_enabled (--avoid), radar_enabled, camera_enabled, base_link_at_center, use_sim_time, map paths.
+#  stop_react_sec / stop_decel below are replaced by data/buggy_brake_calibration.yaml once you have
+#  run ./buggy calibrate-brake --live.
+#
+#  VEHICLE GEOMETRY appears in several nodes. Keep these in step (params-check warns if they differ):
+#    LiDAR 1.73 m ahead of the rear axle:  velodyne_static_tf.x, lidar_obstacle_detector.sensor_x,
+#                                          self_hit_filter.sensor_offset_x
+#    LiDAR 1.0 m above the ground:         velodyne_static_tf.z, lidar_obstacle_detector.sensor_z,
+#                                          avoidance_planner.sensor_z
+#    wheelbase 1.6 m:                      operation_manager, route_planner, avoidance_planner, wheel_odometry
+#    max steering 20 deg:                  operation_manager, route_planner, avoidance_planner
+#    rear axle -> front bumper 2.2 m:      operation_manager.front_offset, avoidance_planner.front
+# ============================================================================================
+
+# ---------------------------------------------------------------- driving (AUTO)
+operation_manager:
+  ros__parameters:
+    velocity_limit_kmh: 5.0          # also changed at run time from the panel; < 3 selects the 2 km/h preset
+    wheelbase: 1.6
+    max_steering_deg: 20.0
+    front_offset: 2.2                # rear axle -> front bumper; stop distances are measured from the bumper
+    detect_range: 30.0               # obstacles up to this far ahead along the route count
+    lookahead_distance: 4.0          # pure pursuit
+    max_steering_rate_deg_s: 40.0    # steering command slew rate (placeholder, not measured)
+    corridor_half_width: 1.25        # an obstacle this close to the route centre line blocks the vehicle
+    max_cross_track: 2.5             # AUTO stops when further off the route than this
+    localization_grace_sec: 1.0      # AUTO stops when localization was not 'converged' for this long
+    # stopping model: s_stop = v * react + v^2 / (2 * decel)   (replaced by the brake calibration file)
+    stop_react_sec: 1.0
+    stop_decel: 0.8
+    stop_margin: 2.5                 # bumper-to-obstacle gap the vehicle stops at (without avoidance)
+    slow_zone: 6.0                   # slow to the 2 km/h preset this far before the stop line
+    goal_margin: 0.5
+    # obstacle memory (keeps an obstacle through sensor drop-outs)
+    obstacle_memory_sec: 4.0
+    obstacle_memory_max_sec: 25.0
+    obstacle_memory_min_hits: 5
+    lost_obstacle_creep_sec: 10.0
+    zone_half_width: 1.5             # width of the slow / stop zones drawn in RViz
+    # detour (needs --avoid): stop, wait, replan; back to the route when the obstacle is gone
+    avoid_after_sec: 5.0             # replan only after the vehicle stood still this long
+    avoid_corridor_half_width: 1.05  # lateral band that counts as blocking while on a detour
+    avoid_retry_sec: 5.0
+    avoid_max_tries: 6
+    avoid_clear_sec: 2.0             # obstacle gone this long during a detour -> back to the original route
+    avoid_stop_early: true          # false = stop at stop_margin (2.5 m) like without --avoid. true = with --avoid stop
+                                     # earlier (avoid_stop_margin / planner probe) so a detour has room; costs distance
+    avoid_probe: true                # with avoid_stop_early: true = the stop line follows the planner's room estimate
+                                     # (wide obstacles stop further away); false = exactly avoid_stop_margin
+    avoid_stop_margin: 7.5           # with avoid_stop_early: stop at least this far before the obstacle
+                                     # (a detour from a standstill needs ~7 m: no reverse, 4.4 m turning radius);
+                                     # wide obstacles move the stop line back further (planner probe, up to 20 m)
+
+# ---------------------------------------------------------------- planning
+route_planner:
+  ros__parameters:
+    wheelbase: 1.6
+    max_steering_deg: 20.0
+    steering_margin: 0.9             # the route is smoothed to this fraction of the steering limit
+    smoothing_max_deviation: 0.6     # smoothing may leave the lane centre line by this much
+    link_gap: 4.0                    # lane end within this of another lane start counts as connected (ring lanes)
+    link_angle_deg: 60.0
+    home_reach: 2.5                  # within this of HOME = "at home"
+
+avoidance_planner:
+  ros__parameters:
+    wheelbase: 1.6
+    max_steering_deg: 20.0
+    vehicle_half_width: 0.72
+    side_margin: 0.35                # body-to-obstacle clearance of a detour
+    avoid_corridor_half_width: 1.05  # lateral band around the route that counts as blocking
+    steer_frac: 0.75                 # arcs are planned with this fraction of the steering limit
+    check_steer_frac: 0.95           # the finished detour may use this fraction
+    rear: 0.7                        # body behind the rear axle
+    front: 2.2                       # body ahead of the rear axle (= bumper)
+    footprint_margin: 0.15           # extra body margin in the swept-area check
+    lead: 1.0                        # the shift is complete this far before the bumper meets the obstacle
+    tail: 0.6                        # rejoin starts this far behind the obstacle (+ rear overhang)
+    offlane_allow_m: 0.8             # without LiDAR (view): drivable outside the lane by this much; the front corners swing
+                                     # ~1.5 m wide during a detour, so 3.0 is needed to pass an obstacle in a 3 m lane
+    offlane_allow_sensed_m: 8.0      # with LiDAR: where free ground was seen, up to this far outside the lane
+    ground_fraction: 0.65            # share of out-of-lane body samples that must lie on seen ground
+    max_offset_m: 6.5                # largest sideways shift from the route considered
+    offset_step: 0.5
+    look_ahead: 40.0
+    merge_gap: 8.0                   # obstacles closer than this along the route form one zone
+    sensor_z: 1.0                    # LiDAR height above ground (heights of solid cells)
+    scan_memory_sec: 1.5
+    grid_res: 0.2
+
+# ---------------------------------------------------------------- perception
+lidar_obstacle_detector:
+  ros__parameters:
+    sensor_x: 1.73                   # LiDAR position in base_link (rear axle)
+    sensor_z: 1.0
+    min_height: 0.2                  # above the flat reference ground (ground_aware: false)
+    max_height: 2.0                  # a branch above this is not an obstacle
+    corridor_half_width: 1.25
+    corridor_length: 25.0
+    cell_size: 0.3                   # clustering grid
+    min_points: 5
+    max_rate_hz: 10.0
+    # ground aware: height above the LOCAL ground (slope / pitch safe), see README
+    ground_aware: true
+    ground_min_height: 0.3           # above the local ground
+    reject_thin_low: true            # drop a single thin low beam ring (road bump); false to see cones
+    thin_extent: 0.08
+    low_height: 0.5
+    ground_max_age: 0.3
+
+segment_ground:
+  ros__parameters:
+    max_distance: 25.0
+    min_height: -1.6                 # points below / above (sensor frame) are ignored
+    max_height: 2.0
+    min_points: 50
+    seed_z_min: -1.45                # a ground line starts with a point in this height band
+    seed_z_max: -0.45
+    num_segments: 180                # 2 deg azimuth slices
+    bin_size: 0.5
+    max_slope_deg: 10.0              # steepest ground between bins
+    max_height_jump: 0.2
+    base_thresh: 0.15                # ground band around the ground line: base + scale * range, at most max_adaptive
+    distance_scale: 0.012
+    max_adaptive: 0.25
+    ground_max_above: 0.15
+    ground_max_below: 0.2
+
+self_hit_filter:
+  ros__parameters:
+    min_range: 1.0
+    box_x_min: -2.39                 # box around the chassis (sensor frame) whose points are the vehicle itself
+    box_x_max: 0.53
+    box_y_min: -0.72
+    box_y_max: 0.72
+    box_z_min: -1.05
+    box_z_max: -0.1
+    sensor_offset_x: 1.73            # LiDAR position in base_link
+    sensor_offset_y: 0.0
+    robot_length: 4.9                # exclusion rectangle around the vehicle centre (base_link)
+    robot_width: 2.9
+
+# ---------------------------------------------------------------- localization
+velodyne_static_tf:
+  ros__parameters:
+    x: 1.73                          # base_link (rear axle) -> LiDAR
+    y: 0.0
+    z: 1.0
+    roll: 0.0                        # rad
+    pitch: 0.0                       # e.g. 0.296706 for a LiDAR tilted down 17 deg
+    yaw: 0.0
+
+lidar_preprocess:
+  ros__parameters:
+    voxel_size: 0.3                  # NDT input: one point per voxel
+    max_range: 40.0
+    min_range: 0.5
+    max_rate_hz: 10.0                # NDT rate (also launch argument ndt_rate_hz)
+    self_x_min: -2.5                 # box around the vehicle (sensor frame) that is cut away
+    self_x_max: 0.6
+    self_y_min: -0.9
+    self_y_max: 0.9
+    self_z_min: -1.2
+    self_z_max: 0.9
+
+localization_manager:
+  ros__parameters:
+    score_ok: 1.4                    # NDT likelihood from which the pose counts as 'converged'
+    lost_timeout_sec: 3.0
+    align_timeout_sec: 40.0
+    max_retries: 2
+    ekf_settle_sec: 1.5
+    jump_m: 0.5                      # map->base_link jumps larger than this are counted
+
+wheel_odometry:
+  ros__parameters:
+    wheelbase: 1.6
+
+# ---------------------------------------------------------------- hardware (ECU serial ports)
+uart_writer:
+  ros__parameters:
+    port: "/dev/ttyUSB0"             # commands to the ECU (also launch argument sender_port:=)
+    baudrate: 115200
+    watchdog_sec: 0.5                # no command for this long -> STOP frames
+
+uart_bridge:
+  ros__parameters:
+    port: "/dev/ttyUSB0"             # feedback from the ECU (also launch argument feedback_port:=)
+    baud: 115200
+
+# ---------------------------------------------------------------- display
+map_display_cloud:
+  ros__parameters:
+    voxel_size: 0.3                  # RViz shows the map thinned to one point per voxel (0 = full map)

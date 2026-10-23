@@ -22,6 +22,7 @@ buggy - PCD + Lanelet2 localisation, routing and AUTO driving for the buggy
   ./buggy calibrate-brake [--preset 2|4] [--live]   measure the real stopping behaviour
   ./buggy add-map NAME FILE.osm [--pcd FILE.pcd]    create a map folder from a Vector Map Builder export
   ./buggy sim-map [--save]                   record a PCD of the Gazebo world (then --save)
+  ./buggy params-check [FILE]                check config/buggy_params.yaml (or your own file) against the nodes
   ./buggy stop                               stop a running launch cleanly (Ctrl+C also works)
   ./buggy ros2 ...                           any ros2 command inside this environment
 
@@ -34,6 +35,7 @@ live / replay options
   --radar        add radar obstacles (umrr radar on CAN + radar_fusion; Gazebo: synthetic radar)
   --avoid        go around an obstacle that blocks the lane for >5 s (default ON in view/sim, OFF live/replay);
                  --no-avoid turns it off
+  --params FILE  your own parameter YAML (only the keys you want to change); config/buggy_params.yaml holds all defaults
   --cpp          run the C++ runtime nodes (uart_writer, uart_bridge, wheel_odometry, lidar_preprocess, odom_to_twist, velodyne_static_tf, localization_manager, route_planner, avoidance_planner, segment_ground, self_hit_filter, lidar_obstacle_detector, operation_manager) from buggy_core
   --camera       camera + object-detection model: obstacles get a class name instead of "unknown"
                  (detector_model:=<onnx>  camera_device:=/dev/video0  can_interface:=can0
@@ -114,6 +116,8 @@ case "$cmd" in
       for f in lanelet2_map.osm pointcloud_map.pcd map_projector_info.yaml pointcloud_map_metadata.yaml; do [ -e "$d/$f" ] || good=0; done
       chk "map $n" "[ $good = 1 ]" "needs lanelet2_map.osm pointcloud_map.pcd map_projector_info.yaml pointcloud_map_metadata.yaml"
     done
+    echo "Parameters"
+    chk "config/buggy_params.yaml agrees with the Python and C++ nodes" "python3 $SCRIPTS/check_params.py >/dev/null" "./buggy params-check shows what differs"
     echo "Hardware (fails here if the buggy is not connected - fine for sim/replay)"
     python3 "$SCRIPTS/live_preflight.py" || ok=0
     [ $ok = 1 ] && echo "ALL OK" || echo "Some checks failed (see above)." ;;
@@ -126,6 +130,8 @@ case "$cmd" in
       printf '%-22s lanelets: %-4s pcd: %s\n' "$n" "${lan:-?}" "${sz:-MISSING}"
     done ;;
 
+  params-check) python3 "$SCRIPTS/check_params.py" "$@" ;;
+
   add-map) python3 "$SCRIPTS/add_map.py" "$@" ;;
 
   view)
@@ -135,6 +141,7 @@ case "$cmd" in
       case "$1" in
         --no-rviz) ARGS+=(rviz:=false) ;;
         --avoid) ARGS+=(avoidance:=true) ;; --no-avoid) ARGS+=(avoidance:=false) ;; --cpp) ARGS+=(core:=cpp) ;;
+        --params) shift; [ -f "${1:-}" ] || { echo "--params needs an existing YAML file"; exit 1; }; ARGS+=("params:=$(realpath "$1")") ;;
         *:=*) ARGS+=("$1") ;;
         -*) echo "unknown option $1"; exit 1 ;;
         *) MAP="$1" ;;
@@ -153,6 +160,7 @@ case "$cmd" in
         --no-rviz) ARGS+=(rviz:=false) ;; --no-detector) ARGS+=(obstacle_detection:=false) ;;
         --radar) ARGS+=(radar:=true) ;; --camera) ARGS+=(camera:=true) ;;
         --avoid) ARGS+=(avoidance:=true) ;; --no-avoid) ARGS+=(avoidance:=false) ;; --cpp) ARGS+=(core:=cpp) ;;
+        --params) shift; [ -f "${1:-}" ] || { echo "--params needs an existing YAML file"; exit 1; }; ARGS+=("params:=$(realpath "$1")") ;;
         *:=*) ARGS+=("$1") ;;
         -*) echo "unknown option $1"; exit 1 ;;
         *) MAP="$1" ;;
@@ -181,6 +189,7 @@ case "$cmd" in
       case "$1" in
         --radar) ARGS+=(radar:=true) ;; --camera) ARGS+=(camera:=true) ;; --no-rviz) ARGS+=(rviz:=false) ;;
         --avoid) ARGS+=(avoidance:=true) ;; --no-avoid) ARGS+=(avoidance:=false) ;; --cpp) ARGS+=(core:=cpp) ;;
+        --params) shift; [ -f "${1:-}" ] || { echo "--params needs an existing YAML file"; exit 1; }; ARGS+=("params:=$(realpath "$1")") ;;
         *:=*) ARGS+=("$1") ;;
         -*) echo "unknown option $1"; exit 1 ;;
         *) MAP="$1" ;;
@@ -204,6 +213,7 @@ case "$cmd" in
       case "$1" in
         --live) LIVE=1; LB=false; PASS+=(--live) ;;
         --cpp) EXTRA+=(core:=cpp) ;;
+        --params) shift; [ -f "${1:-}" ] || { echo "--params needs an existing YAML file"; exit 1; }; EXTRA+=("params:=$(realpath "$1")") ;;
         *:=*) EXTRA+=("$1") ;;
         *) PASS+=("$1") ;;
       esac; shift

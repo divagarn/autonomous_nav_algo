@@ -398,6 +398,7 @@ def fast_pub(header, pts, pub, is_ground):
 class PointCloudProcessor(Node):
     def __init__(self):
         super().__init__('segment_ground')
+        self.load_parameters()
         self.gpub = self.create_publisher(PointCloud2, '/ground_points', 2)
         self.ngpub = self.create_publisher(PointCloud2, '/non_ground_points', 2)
         self.tt = 0.0
@@ -429,6 +430,30 @@ class PointCloudProcessor(Node):
                 "RANSAC coarse={} fine={} angle<{}deg iters={} batch={}".format(
                     RANSAC_THRESHOLD_COARSE, RANSAC_THRESHOLD_FINE,
                     MAX_GROUND_ANGLE, RANSAC_ITERATIONS, RANSAC_BATCH))
+
+    def load_parameters(self):
+        """Thresholds of the segment backend from config/buggy_params.yaml (section segment_ground);
+        the module constants above are the defaults. They are module globals, so this also reaches
+        segment_linefit_ground()."""
+        global MAX_DISTANCE, MIN_HEIGHT, MAX_HEIGHT, SEED_Z_MIN, SEED_Z_MAX, SEG_NUM_SEGMENTS
+        global SEG_BIN_SIZE_M, SEG_MAX_SLOPE, SEG_MAX_HEIGHT_JUMP, BASE_GROUND_THRESH, DISTANCE_SCALE
+        global MAX_ADAPTIVE_THRESH, GROUND_MAX_Z_ABOVE, GROUND_MAX_Z_BELOW, MIN_GROUND_POINTS
+        p = self.declare_parameter
+        MAX_DISTANCE = p('max_distance', MAX_DISTANCE).value
+        MIN_HEIGHT = p('min_height', MIN_HEIGHT).value
+        MAX_HEIGHT = p('max_height', MAX_HEIGHT).value
+        SEED_Z_MIN = p('seed_z_min', SEED_Z_MIN).value
+        SEED_Z_MAX = p('seed_z_max', SEED_Z_MAX).value
+        SEG_NUM_SEGMENTS = int(p('num_segments', SEG_NUM_SEGMENTS).value)
+        SEG_BIN_SIZE_M = p('bin_size', SEG_BIN_SIZE_M).value
+        SEG_MAX_SLOPE = float(np.tan(np.radians(p('max_slope_deg', 10.0).value)))
+        SEG_MAX_HEIGHT_JUMP = p('max_height_jump', SEG_MAX_HEIGHT_JUMP).value
+        BASE_GROUND_THRESH = p('base_thresh', BASE_GROUND_THRESH).value
+        DISTANCE_SCALE = p('distance_scale', DISTANCE_SCALE).value
+        MAX_ADAPTIVE_THRESH = p('max_adaptive', MAX_ADAPTIVE_THRESH).value
+        GROUND_MAX_Z_ABOVE = p('ground_max_above', GROUND_MAX_Z_ABOVE).value
+        GROUND_MAX_Z_BELOW = p('ground_max_below', GROUND_MAX_Z_BELOW).value
+        MIN_GROUND_POINTS = int(p('min_points', MIN_GROUND_POINTS).value)
 
     def callback(self, msg):
         try:

@@ -65,6 +65,7 @@ To move it to another computer, copy this whole folder, then run the three lines
 | `./buggy calibrate-brake [--preset 2\|4] [--live]` | Measures the real stopping distance. Dry run unless `--live`. |
 | `./buggy add-map NAME FILE.osm [--pcd FILE.pcd]` | Creates `data/maps/NAME/` from a Vector Map Builder export and checks it. |
 | `./buggy sim-map` / `./buggy sim-map --save` | Drives the Gazebo lane and records a PCD (`--save` writes it). |
+| `./buggy params-check [FILE]` | Checks `config/buggy_params.yaml` (or your own file) against the Python and C++ nodes: typos, wrong types, values that must agree. |
 | `./buggy stop` | Clean Ctrl+C to the running launch. |
 | `./buggy ros2 ...` | Any ros2 command in this environment, e.g. `./buggy ros2 topic echo /localization/state`. |
 
@@ -73,7 +74,32 @@ Extra `key:=value` arguments go straight to `ros2 launch`:
 `voxel_size:=0.5  ndt_rate_hz:=5.0  corridor_half_width:=1.0  feedback_port:=/dev/ttyUSB1
 sender_port:=/dev/ttyUSB1  bag_start_delay:=12.0  bag_rate:=0.35  can_interface:=can0
 detector_model:=<onnx>  camera_device:=/dev/video0  labeler_debug:=true`.
-Options: `--no-rviz`, `--no-detector`, `--radar`, `--camera`.
+Options: `--no-rviz`, `--no-detector`, `--radar`, `--camera`, `--params FILE`.
+
+### Parameters: `config/buggy_params.yaml`
+All tuning parameters of the nodes (125 of them: stop distances, detour, obstacle detection, ground filter, vehicle and
+LiDAR geometry, ECU serial ports, ...) are in **one file**, `config/buggy_params.yaml`, one section per node. The values in
+it are the built-in defaults, with a comment for each. The Python and the C++ nodes (`--cpp`) read the same file.
+* **Change a value:** edit the file and restart `./buggy ...`. No rebuild.
+* **Your own file:** `./buggy live --params my_params.yaml` - list only the keys you want to change, e.g.
+  ```yaml
+  operation_manager:
+    ros__parameters:
+      avoid_stop_margin: 9.0
+  uart_bridge:
+    ros__parameters:
+      port: "/dev/ttyUSB1"
+  ```
+* **Priority** (highest wins): command line `key:=value` (e.g. `corridor_half_width:=1.0`, `feedback_port:=...`) >
+  `--params FILE` > `config/buggy_params.yaml` > the default in the code. A launch argument you do not give does nothing.
+* **Check it:** `./buggy params-check` (also part of `./buggy doctor`) reports unknown names, wrong types (write `5.0`,
+  not `5`, for a float) and warns when the same vehicle dimension differs between nodes (LiDAR mount, wheelbase,
+  steering limit, bumper offset).
+* **Look at the running value:** `./buggy ros2 param get /operation_manager avoid_stop_margin`.
+* **Not in the file** (they are switches or wiring of the `./buggy` options): `live`, `drive_enabled`, `--avoid`,
+  `radar` / `camera`, `base_link_at_center`, map paths. `stop_react_sec` / `stop_decel` are replaced by
+  `data/buggy_brake_calibration.yaml` once you have calibrated the brakes.
+The path of the folder is `$BUGGY_CONFIG_DIR` (set by `setup.bash`, default `<folder>/config`).
 
 ## 3. Real buggy: step by step
 
@@ -230,10 +256,35 @@ appeared (`ros2 bag record /velodyne_points /wheel_uart /tf /tf_static`) to tune
 
 ### Going around a blocked lane (detour / obstacle avoidance)
 `--avoid` (default **on** in `view`/`sim`, **off** in `live`/`replay`; `--no-avoid` turns it off).
-If an obstacle has blocked the route for **5 s** (`avoid_after_sec`), `operation_manager` asks the
-`avoidance_planner` for a detour. The planner builds a smooth lateral S-curve off the lane centre line
-(arc radius from the steering limit, forward driving only - the ECU has no reverse), past the obstacle
-with 0.35 m body clearance, and back onto the **same route**, so the buggy carries on along its lanelet path.
+
+**How it runs (stop first, then replan):**
+1. The buggy slows down and **stops** in front of the obstacle as usual, at `stop_margin` (2.5 m) from the bumper.
+   *Optional, off by default:* `avoid_stop_early: true` (in `config/buggy_params.yaml`, section `operation_manager`) keeps the stop line at least
+   `avoid_stop_margin` (7.5 m) before the obstacle, and further back when the planner says a wide obstacle needs more room:
+   while the obstacle is still ahead `operation_manager` sends the planner a *probe* every 1.5 s and the answer
+   (`room_needed`) moves the stop line back (a pedestrian needs ~7 m, a 10 m barrier ~12 m). Why: the buggy only drives
+   forward (no reverse) and turns no tighter than ~4.4 m radius, so a detour planned from a standstill needs that room.
+   **To choose the stop distance yourself:** `avoid_stop_early: true`, `avoid_probe: false`, `avoid_stop_margin: <metres>`
+   (the buggy then stops that far before every obstacle; measured on `small_loop` with a pedestrian: a 2 m stop found no detour,
+   a 3.5 m stop (`avoid_stop_margin: 4.0`) did). The planner itself does not need 7 m: on a straight lane it found detours from a
+   2.5 to 4 m gap (peak steering 15 deg). What it needs is *room beside the lane* (the front corners swing wide during the arc;
+   without LiDAR only `offlane_allow_m` = 0.8 m outside the lane counts, set 3.0 in `avoidance_planner` for `view`) and *no tight bend*
+   right there (an offset towards the inside of a bend pushes the steering past the limit).
+   With the default (off) a detour from 2-3 m in front of the obstacle mostly fails ("needs more steering" / "needs ~7 m
+   before the obstacle") and the buggy simply stays stopped.
+2. The panel message counts it down (`... | replanning in 3 s`). Only after the vehicle has **stood still for 5 s** (`avoid_after_sec`) the
+   planner is asked for a detour (before, while it was still driving, nothing is replanned).
+3. The detour is **inside the lane** when the buggy fits (smallest shift that clears the obstacle). If the lane is
+   blocked completely, the planner looks for free ground **outside the lane** (LiDAR): the part of the detour inside the lane is drawn
+   **cyan**, the part outside the lane **magenta** with the label *DETOUR OUTSIDE THE LANE*, and the free ground the LiDAR
+   has seen outside the lane around the obstacle is drawn as **green** cells (displays *Detour* and *Free space outside
+   the lane*; the green cells need LiDAR data, i.e. `live` / `replay` / `sim`, not plain `view`).
+4. **If the obstacle disappears while the buggy is still on the detour** (and it has not yet reached the obstacle),
+   after `avoid_clear_sec` (2 s) the buggy goes **back to the original route** - a smooth S-curve from where it is onto
+   the original lanelet path, not along the old detour - and the panel says *Route restored*. Beside or past the
+   obstacle it finishes the detour instead (the detector no longer sees an obstacle behind it).
+5. The original route is always kept; when the detour is finished the buggy is back on it.
+
 A detour is accepted only if the whole swept body footprint is clear of every known obstacle, of solid LiDAR
 cells, and inside the drivable area: the lane, or up to 0.8 m outside it (2.0 m where the LiDAR has actually
 seen free ground; without LiDAR data, e.g. in `view`, only 0.8 m is assumed). The detour is drawn in cyan
@@ -241,8 +292,8 @@ seen free ground; without LiDAR data, e.g. in `view`, only 0.8 m is assumed). Th
 slow/stop logic still applies to anything else near it.
 If there is no room it stays stopped, says why in the panel (`Blocked, no detour: ...`) and retries every 5 s (6 tries).
 Limits to know:
-* it needs about **10 m** in front of the obstacle (a 1.4 m shift needs ~9.5 m of arc plus 1 m lead), so the
-  5 s timer starts when the obstacle is first seen, not when the buggy has already stopped at 3 m;
+* it needs about **7-12 m** in front of the obstacle (see the stop line above); if the planner says it needs more room than
+  the buggy has, it stays stopped and says how much room it would need;
 * a **tight curve** or a **narrow lane** (3.2 m lane, 0.6 m pedestrian: ~1.4 m shift) often leaves no room:
   on `small_loop` the planner found a detour for a pedestrian at 5 of 16 positions with lane-only data;
 * a **car** (1.8 m wide) in a 3.2 m lane needs ~2.4 m outside the lane: only possible with LiDAR confirmation;

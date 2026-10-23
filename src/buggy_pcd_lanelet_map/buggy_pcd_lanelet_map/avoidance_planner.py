@@ -21,9 +21,11 @@ from scipy import ndimage
 from scipy.spatial import cKDTree
 from sensor_msgs.msg import PointCloud2
 from std_msgs.msg import String
+from visualization_msgs.msg import Marker, MarkerArray
+from geometry_msgs.msg import Point
 from tf2_ros import Buffer, TransformException, TransformListener
 
-from buggy_pcd_lanelet_map.avoidance import FreeSpace, Params, plan_detour
+from buggy_pcd_lanelet_map.avoidance import FreeSpace, Params, free_space_cells, plan_detour
 from buggy_pcd_lanelet_map.route_planner import load_lanelets
 
 
@@ -63,13 +65,20 @@ class AvoidancePlanner(Node):
             avoid_half_width=p('avoid_corridor_half_width', 1.05).value,
             offlane_allow=p('offlane_allow_m', 0.8).value,
             offlane_allow_sensed=p('offlane_allow_sensed_m', 8.0).value,
-            max_offset=p('max_offset_m', 6.5).value)
+            max_offset=p('max_offset_m', 6.5).value,
+            steer_frac=p('steer_frac', 0.75).value, check_steer_frac=p('check_steer_frac', 0.95).value,
+            rear=p('rear', 0.7).value, front=p('front', 2.2).value,
+            footprint_margin=p('footprint_margin', 0.15).value, lead=p('lead', 1.0).value,
+            tail=p('tail', 0.6).value, ground_fraction=p('ground_fraction', 0.65).value,
+            look_ahead=p('look_ahead', 40.0).value, merge_gap=p('merge_gap', 8.0).value,
+            offset_step=p('offset_step', 0.5).value)
         self.lane = LaneModel(load_lanelets(osm)) if osm else None
         self.tf = Buffer()
         TransformListener(self.tf, self)
         self.nonground = collections.deque()    # (t, Nx2 map-frame points of solid obstacles)
         self.ground = collections.deque()       # (t, Nx2 map-frame ground points)
         self.pub = self.create_publisher(String, '/planning/avoid_result', 5)
+        self.free_pub = self.create_publisher(MarkerArray, '/planning/free_space_marker', 1)
         self.create_subscription(String, '/planning/avoid_request', self.on_request, 5)
         if self.use_sensors:
             self.create_subscription(PointCloud2, '/non_ground_points_filtered',
@@ -122,6 +131,27 @@ class AvoidancePlanner(Node):
         # ground is dilated more: the VLP-16 rings are ~0.7 m apart at 10 m, the gaps are not holes
         return FreeSpace(lo, self.res, grid(self.nonground, 1), grid(self.ground, 3))
 
+    def show_free_space(self, pts, zone, free, res):
+        """The lane is blocked completely (no detour, or the detour has to leave the lane): show the
+        free ground the LiDAR has seen outside the lane, in green (the detour outside the lane is magenta)."""
+        mk = Marker()
+        mk.header.frame_id, mk.header.stamp = self.frame, self.get_clock().now().to_msg()
+        mk.ns, mk.id, mk.type = 'free_space', 0, Marker.CUBE_LIST
+        mk.action = Marker.ADD
+        left_lane = (not res.get('ok')) or res.get('outside_lane')
+        if zone is None or free is None or not left_lane:
+            mk.action = Marker.DELETEALL
+        else:
+            cells = free_space_cells(pts, zone, free, self.lane, self.prm)
+            mk.pose.orientation.w = 1.0
+            mk.scale.x = mk.scale.y = 2 * self.res
+            mk.scale.z = 0.05
+            mk.color.r, mk.color.g, mk.color.b, mk.color.a = 0.2, 1.0, 0.3, 0.45
+            mk.lifetime.sec = 20
+            z0 = float(pts[0][2]) if len(pts) else 0.0
+            mk.points = [Point(x=float(x), y=float(y), z=z0 + 0.03) for x, y in cells]
+        self.free_pub.publish(MarkerArray(markers=[mk]))
+
     def on_request(self, msg):
         t0 = time.time()
         try:
@@ -132,8 +162,10 @@ class AvoidancePlanner(Node):
             return
         free = self.free_space(pts)
         res = plan_detour(pts, obstacles, self.lane, free, self.prm)
-        res.pop('zone', None)
+        zone = res.pop('zone', None)
+        self.show_free_space(pts, zone, free, res)
         res['id'] = req.get('id')
+        res['probe'] = bool(req.get('probe', False))
         res['sensed'] = free is not None
         self.pub.publish(String(data=json.dumps(res)))
         self.get_logger().info(

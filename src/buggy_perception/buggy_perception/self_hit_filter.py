@@ -62,6 +62,16 @@ ROBOT_HALF_WIDTH = ROBOT_WIDTH / 2.0
 class SelfHitFilter(Node):
     def __init__(self):
         super().__init__('self_hit_filter')
+        # configurable (config/buggy_params.yaml, section self_hit_filter); the module constants are the defaults
+        p = self.declare_parameter
+        self.min_range = p('min_range', SELF_FILTER_MIN_RANGE).value
+        self.box = (p('box_x_min', SELF_FILTER_X_MIN).value, p('box_x_max', SELF_FILTER_X_MAX).value,
+                    p('box_y_min', SELF_FILTER_Y_MIN).value, p('box_y_max', SELF_FILTER_Y_MAX).value,
+                    p('box_z_min', SELF_FILTER_Z_MIN).value, p('box_z_max', SELF_FILTER_Z_MAX).value)
+        self.sensor_dx = p('sensor_offset_x', SENSOR_OFFSET_X).value
+        self.sensor_dy = p('sensor_offset_y', SENSOR_OFFSET_Y).value
+        self.half_length = p('robot_length', ROBOT_LENGTH).value / 2.0
+        self.half_width = p('robot_width', ROBOT_WIDTH).value / 2.0
         self.pub = self.create_publisher(PointCloud2, '/non_ground_points_filtered', 2)
         self.create_subscription(
             PointCloud2, '/non_ground_points', self.callback, 2)
@@ -83,11 +93,11 @@ class SelfHitFilter(Node):
         marker.scale.x = 0.05
         marker.color.r, marker.color.g, marker.color.b, marker.color.a = 1.0, 0.5, 0.0, 0.9
         corners = [
-            (ROBOT_HALF_LENGTH, ROBOT_HALF_WIDTH),
-            (ROBOT_HALF_LENGTH, -ROBOT_HALF_WIDTH),
-            (-ROBOT_HALF_LENGTH, -ROBOT_HALF_WIDTH),
-            (-ROBOT_HALF_LENGTH, ROBOT_HALF_WIDTH),
-            (ROBOT_HALF_LENGTH, ROBOT_HALF_WIDTH),
+            (self.half_length, self.half_width),
+            (self.half_length, -self.half_width),
+            (-self.half_length, -self.half_width),
+            (-self.half_length, self.half_width),
+            (self.half_length, self.half_width),
         ]
         for x, y in corners:
             p = Point()
@@ -100,17 +110,18 @@ class SelfHitFilter(Node):
             return
         pts = np.frombuffer(msg.data, dtype=np.float32).reshape(-1, 4)
         xyz = pts[:, :3]
-        too_close = np.linalg.norm(xyz, axis=1) < SELF_FILTER_MIN_RANGE
+        x0, x1, y0, y1, z0, z1 = self.box
+        too_close = np.linalg.norm(xyz, axis=1) < self.min_range
         inside_box = (
-            (xyz[:, 0] > SELF_FILTER_X_MIN) & (xyz[:, 0] < SELF_FILTER_X_MAX) &
-            (xyz[:, 1] > SELF_FILTER_Y_MIN) & (xyz[:, 1] < SELF_FILTER_Y_MAX) &
-            (xyz[:, 2] > SELF_FILTER_Z_MIN) & (xyz[:, 2] < SELF_FILTER_Z_MAX)
+            (xyz[:, 0] > x0) & (xyz[:, 0] < x1) &
+            (xyz[:, 1] > y0) & (xyz[:, 1] < y1) &
+            (xyz[:, 2] > z0) & (xyz[:, 2] < z1)
         )
-        base_link_x = xyz[:, 0] + SENSOR_OFFSET_X
-        base_link_y = xyz[:, 1] + SENSOR_OFFSET_Y
+        base_link_x = xyz[:, 0] + self.sensor_dx
+        base_link_y = xyz[:, 1] + self.sensor_dy
         inside_robot_rect = (
-            (np.abs(base_link_x) < ROBOT_HALF_LENGTH) &
-            (np.abs(base_link_y) < ROBOT_HALF_WIDTH)
+            (np.abs(base_link_x) < self.half_length) &
+            (np.abs(base_link_y) < self.half_width)
         )
         kept = pts[~(too_close | inside_box | inside_robot_rect)]
 

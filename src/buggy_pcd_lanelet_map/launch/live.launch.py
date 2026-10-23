@@ -33,11 +33,24 @@ from launch.substitutions import LaunchConfiguration
 from launch_ros.actions import Node
 from launch_ros.parameter_descriptions import ParameterValue
 
-from buggy_pcd_lanelet_map.paths import data_dir
+from buggy_pcd_lanelet_map.paths import config_files, data_dir
+
+
+def opt(context, **spec):
+    """{param: value} only for launch arguments the user really gave; an empty argument means
+    'take the value from config/buggy_params.yaml'."""
+    out = {}
+    for param, (arg, typ) in spec.items():
+        v = LaunchConfiguration(arg).perform(context)
+        if v != '':
+            out[param] = (v.lower() == 'true') if typ is bool else typ(v)
+    return out
 
 
 def launch_setup(context):
     pkg = get_package_share_directory('buggy_pcd_lanelet_map')
+    # YAML parameter files: config/buggy_params.yaml, then the user's params:=FILE; launch arguments win
+    cfg = config_files(LaunchConfiguration('params').perform(context))
     bag_path = LaunchConfiguration('bag_path').perform(context)
     replay = bool(bag_path)
     gz = LaunchConfiguration('gazebo').perform(context).lower() == 'true'
@@ -71,6 +84,7 @@ def launch_setup(context):
             'avoidance': LaunchConfiguration('avoidance'),
             'map_display_voxel': LaunchConfiguration('map_display_voxel'),
             'obstacle_memory_sec': LaunchConfiguration('obstacle_memory_sec'),
+            'params': LaunchConfiguration('params'),
             'use_sim_time': 'true' if sim else 'false',
             'base_link_at_center': 'true' if gz else 'false',
             'corridor_half_width': LaunchConfiguration('corridor_half_width'),
@@ -80,11 +94,11 @@ def launch_setup(context):
     if not gz:    # Gazebo's URDF already provides base_link -> lidar_mount_link
         actions.append(Node(package=('buggy_core' if core_pkg == 'buggy_core' else 'buggy_perception'),
                             executable='velodyne_static_tf',
-                            name='velodyne_static_tf', output='screen', parameters=[t]))
+                            name='velodyne_static_tf', output='screen', parameters=[*cfg, t]))
     actions.append(Node(package=('buggy_core' if core_pkg == 'buggy_core' else 'buggy_perception'),
                        executable='wheel_odometry',
                        name='wheel_odometry', output='screen',
-                       parameters=[{'publish_tf': False, **t}]))
+                       parameters=[*cfg, {'publish_tf': False, **t}]))
     if gz:
         # Gazebo vehicle + sim Velodyne instead of the hardware. The ECU is
         # emulated (ecu_sim) from the frames uart_writer would send, and drives
@@ -133,24 +147,20 @@ def launch_setup(context):
             package=('buggy_core' if core_pkg == 'buggy_core' else 'buggy_uart'),
             executable='uart_bridge', name='uart_bridge',
             output='screen',
-            parameters=[{'port': LaunchConfiguration('feedback_port'), 'baud': 115200}]))
+            parameters=[*cfg, opt(context, port=('feedback_port', str))]))
 
     # ---- localization --------------------------------------------------
     actions.append(Node(
         package=('buggy_core' if core_pkg == 'buggy_core' else 'buggy_pcd_lanelet_map'),
         executable='lidar_preprocess',
         name='lidar_preprocess', output='screen',
-        parameters=[{'voxel_size': ParameterValue(LaunchConfiguration('voxel_size'),
-                                                  value_type=float),
-                     'max_range': ParameterValue(LaunchConfiguration('max_range'),
-                                                 value_type=float),
-                     'max_rate_hz': ParameterValue(LaunchConfiguration('ndt_rate_hz'),
-                                                   value_type=float), **t}]))
+        parameters=[*cfg, opt(context, voxel_size=('voxel_size', float), max_range=('max_range', float),
+                              max_rate_hz=('ndt_rate_hz', float)), t]))
     actions.append(Node(
         package=('buggy_core' if core_pkg == 'buggy_core' else 'buggy_pcd_lanelet_map'),
         executable='odom_to_twist', name='odom_to_twist',
         output='screen',
-        parameters=[{'input_topic': '/odom', 'output_topic': '/twist_with_covariance', **t}]))
+        parameters=[*cfg, {'input_topic': '/odom', 'output_topic': '/twist_with_covariance', **t}]))
     actions.append(Node(
         package='autoware_ekf_localizer', executable='autoware_ekf_localizer_node',
         name='ekf_localizer', output='screen', parameters=[ekf_params, t],
@@ -195,30 +205,28 @@ def launch_setup(context):
     actions.append(Node(
         package=('buggy_core' if core_pkg == 'buggy_core' else 'buggy_pcd_lanelet_map'),
         executable='localization_manager',
-        name='localization_manager', output='screen', parameters=[t]))
+        name='localization_manager', output='screen', parameters=[*cfg, t]))
     # ---- obstacle detection: ground removal (CPU 'segment' backend, no torch) ->
     # vehicle self-hit filter -> clustering inside the route corridor
     if LaunchConfiguration('obstacle_detection').perform(context).lower() == 'true':
         actions.append(Node(
             package=('buggy_core' if core_pkg == 'buggy_core' else 'buggy_perception'),
             executable='segment_ground', name='segment_ground',
-            output='screen', parameters=[t],
+            output='screen', parameters=[*cfg, t],
             additional_env={'SEGMENT_GROUND_METHOD': 'segment'}))
         actions.append(Node(
             package=('buggy_core' if core_pkg == 'buggy_core' else 'buggy_perception'),
             executable='self_hit_filter', name='self_hit_filter',
-            output='screen', parameters=[t]))
+            output='screen', parameters=[*cfg, t]))
         actions.append(Node(
             package=core_pkg, executable='lidar_obstacle_detector',
             name='lidar_obstacle_detector', output='screen',
             # Gazebo: base_link is the chassis centre, lidar 0.93 m ahead of it
-            parameters=[{**t, **({'sensor_x': 0.93} if gz else {}),
-                         'ground_aware': ParameterValue(
-                             LaunchConfiguration('ground_aware'), value_type=bool),
-                         'reject_thin_low': ParameterValue(
-                             LaunchConfiguration('reject_thin_low'), value_type=bool),
-                         'corridor_half_width': ParameterValue(
-                             LaunchConfiguration('corridor_half_width'), value_type=float)}]))
+            parameters=[*cfg,
+                        {**t, **({'sensor_x': 0.93} if gz else {}),
+                         **opt(context, ground_aware=('ground_aware', bool),
+                               reject_thin_low=('reject_thin_low', bool),
+                               corridor_half_width=('corridor_half_width', float))}]))
 
     # ---- optional: radar (radar:=true) -----------------------------------------
     # radar_fusion (IMM-tracked radar objects) -> radar_object_bridge -> the obstacle logic.
@@ -297,8 +305,8 @@ def launch_setup(context):
         actions.append(Node(
             package=core_pkg, executable='uart_writer', name='uart_writer',
             output='screen',
-            parameters=[{'port': LaunchConfiguration('sender_port'), 'baudrate': 115200,
-                         'loopback': loopback, **t}]))
+            parameters=[*cfg, {'loopback': loopback, **t},
+                        opt(context, port=('sender_port', str))]))
     return actions
 
 
@@ -306,7 +314,10 @@ def generate_launch_description():
     pkg_share = get_package_share_directory('buggy_pcd_lanelet_map')
     return LaunchDescription([
         DeclareLaunchArgument('map_path', default_value='new_delhi_map'),
-        DeclareLaunchArgument('feedback_port', default_value='/dev/ttyUSB0'),
+        DeclareLaunchArgument('params', default_value='',
+                              description='your own parameter YAML (overrides config/buggy_params.yaml)'),
+        DeclareLaunchArgument('feedback_port', default_value='',
+                              description='ECU feedback serial port (empty = uart_bridge.port in the YAML)'),
         DeclareLaunchArgument('rviz', default_value='true'),
         DeclareLaunchArgument('obstacle_detection', default_value='true',
                               description='LiDAR obstacle detection (segment_ground + '
@@ -318,22 +329,23 @@ def generate_launch_description():
         DeclareLaunchArgument('loopback', default_value='true',
                               description='uart_writer: true = log frames, write nothing; '
                                           'false = REALLY WRITE to sender_port'),
-        DeclareLaunchArgument('sender_port', default_value='/dev/ttyUSB0'),
-        DeclareLaunchArgument('corridor_half_width', default_value='1.25',
+        DeclareLaunchArgument('sender_port', default_value='',
+                              description='ECU command serial port (empty = uart_writer.port in the YAML)'),
+        DeclareLaunchArgument('corridor_half_width', default_value='',
                               description='obstacle corridor half width around the route [m]'),
         DeclareLaunchArgument('splash', default_value=os.path.join(pkg_share, 'rviz', 'buggy_splash.png')),
         DeclareLaunchArgument('splash_sec', default_value='5.0'),
         DeclareLaunchArgument('rviz_maximize', default_value='true'),
         DeclareLaunchArgument('theme', default_value=os.path.join(pkg_share, 'rviz', 'buggy_theme.qss')),
-        DeclareLaunchArgument('obstacle_memory_sec', default_value='4.0',
+        DeclareLaunchArgument('obstacle_memory_sec', default_value='',
                               description='keep a blocking LiDAR/radar obstacle this long after it was '
                                           'last seen (0 = off); covers sensor drop-outs near the bumper'),
-        DeclareLaunchArgument('map_display_voxel', default_value='0.3',
+        DeclareLaunchArgument('map_display_voxel', default_value='',
                               description='map copy for RViz, one point per voxel [m] (0 = full map)'),
-        DeclareLaunchArgument('ground_aware', default_value='true',
+        DeclareLaunchArgument('ground_aware', default_value='',
                               description='obstacle height above the LOCAL ground (slope / pitch safe); '
                                           'false = old flat reference plane'),
-        DeclareLaunchArgument('reject_thin_low', default_value='true',
+        DeclareLaunchArgument('reject_thin_low', default_value='',
                               description='drop clusters that are one thin low beam ring (road bumps); '
                                           'false if you need very low objects such as cones'),
         DeclareLaunchArgument('core', default_value='python',
@@ -374,8 +386,8 @@ def generate_launch_description():
         DeclareLaunchArgument('bag_start_delay', default_value='8.0'),
         DeclareLaunchArgument('bag_rate', default_value='1.0',
                               description='replay speed (e.g. 0.3 on a slow machine / with --camera)'),
-        DeclareLaunchArgument('voxel_size', default_value='0.3'),
-        DeclareLaunchArgument('max_range', default_value='40.0'),
-        DeclareLaunchArgument('ndt_rate_hz', default_value='10.0'),
+        DeclareLaunchArgument('voxel_size', default_value=''),          # empty = lidar_preprocess.voxel_size in the YAML
+        DeclareLaunchArgument('max_range', default_value=''),           # empty = lidar_preprocess.max_range
+        DeclareLaunchArgument('ndt_rate_hz', default_value=''),         # empty = lidar_preprocess.max_rate_hz
         OpaqueFunction(function=launch_setup),
     ])

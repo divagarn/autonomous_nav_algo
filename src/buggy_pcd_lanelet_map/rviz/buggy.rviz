@@ -78,10 +78,15 @@ Visualization Manager:
             Durability Policy: Transient Local
             Reliability Policy: Reliable
         - Class: rviz_default_plugins/MarkerArray
-          Name: Detour (cyan)
+          Name: Detour (cyan = in lane, magenta = outside lane)
           Enabled: true
           Topic:
             Value: /planning/detour_marker
+        - Class: rviz_default_plugins/MarkerArray
+          Name: Free space outside the lane (green)
+          Enabled: true
+          Topic:
+            Value: /planning/free_space_marker
         - Class: rviz_default_plugins/MarkerArray
           Name: HOME
           Enabled: true

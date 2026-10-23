@@ -41,10 +41,13 @@ import os
 import rclpy
 from autoware_perception_msgs.msg import PredictedObjects
 from geometry_msgs.msg import Point, PoseStamped, PoseWithCovarianceStamped
+from std_msgs.msg import ColorRGBA
 from nav_msgs.msg import Path
 from rclpy.node import Node
 
 import yaml
+from buggy_pcd_lanelet_map.avoidance import arc_shift, shift_length
+from buggy_pcd_lanelet_map.path_utils import max_steer_deg
 from buggy_pcd_lanelet_map.paths import data_dir
 from std_msgs.msg import Bool, Float32, String
 from tf2_ros import Buffer, TransformException, TransformListener
@@ -52,8 +55,6 @@ from visualization_msgs.msg import Marker, MarkerArray
 
 ACCEL = 1.0  # m/s^2, used for both speeding up and braking
 STOP_MARGIN = 2.5     # m kept between vehicle front and an obstacle
-FRONT_OFFSET = 2.2    # rear axle -> front bumper (wheelbase 1.6 + overhang 0.61)
-DETECT_RANGE = 30.0   # m along the path
 SEARCH_WINDOW = 60  # path points searched ahead when matching the vehicle
 
 
@@ -62,6 +63,9 @@ class OperationManager(Node):
         super().__init__('operation_manager')
         self.limit_kmh = self.declare_parameter('velocity_limit_kmh', 5.0).value
         self.wheelbase = self.declare_parameter('wheelbase', 1.6).value
+        # rear axle -> front bumper (wheelbase 1.6 + overhang 0.61), and how far ahead obstacles count
+        self.front_offset = self.declare_parameter('front_offset', 2.2).value
+        self.detect_range = self.declare_parameter('detect_range', 30.0).value
         self.max_steer = self.declare_parameter('max_steering_deg', 20.0).value
         self.lookahead = self.declare_parameter('lookahead_distance', 4.0).value
         # steering actuator slew rate - placeholder, not measured on hardware
@@ -116,6 +120,29 @@ class OperationManager(Node):
         self.avoid_hw = self.declare_parameter('avoid_corridor_half_width', 1.05).value
         self.avoid_retry = self.declare_parameter('avoid_retry_sec', 5.0).value
         self.avoid_max_tries = self.declare_parameter('avoid_max_tries', 6).value
+        # replan only once the vehicle has STOPPED for the obstacle and stood there avoid_after_sec;
+        # while detouring, go back to the original route when the obstacle has been gone this long
+        self.avoid_clear_sec = self.declare_parameter('avoid_clear_sec', 2.0).value
+        # The buggy only drives forward (the ECU has no reverse) and its minimum turning radius is
+        # ~4.4 m, so a detour that is planned from a standstill needs about 7 m in front of the
+        # obstacle. With avoidance on, the stop line is therefore kept at least this far away.
+        self.avoid_stop_margin = self.declare_parameter('avoid_stop_margin', 7.5).value
+        # true = with --avoid stop far enough before the obstacle for a detour (avoid_stop_margin, planner
+        # probe); false (default) = stop at the normal stop_margin and never move the stop line back
+        self.avoid_stop_early = self.declare_parameter('avoid_stop_early', False).value
+        # with avoid_stop_early: true = the planner is probed and the stop line follows its answer (wide obstacles
+        # stop further away); false = the stop line is exactly avoid_stop_margin
+        self.avoid_probe = self.declare_parameter('avoid_probe', True).value
+        self.stop_speed = 0.15      # m/s below which the vehicle counts as stopped
+        self.orig_path, self.orig_seg, self.avoid_req_idx, self.avoid_ib = None, None, 0, 0
+        self.avoid_blockers, self.avoid_pending_blockers, self.gone_since = [], [], None
+        self.restored_until, self.avoid_wait = 0.0, 0.0
+        if self.avoid_enabled and self.avoid_stop_early:
+            self.stop_margin = max(self.stop_margin, self.avoid_stop_margin)
+        self.stop_margin_base = self.stop_margin
+        # while the obstacle is still ahead the planner is asked (probe) how much room a detour needs,
+        # and the stop line is moved back accordingly: wide obstacles need more room than a pedestrian
+        self.room_needed, self.room_time, self.probe_next, self.probe_pending = None, -10.0, 0.0, None
         self.avoiding, self.avoid_end_idx, self.avoid_seg = False, 0, []
         self.block_since, self.block_last = None, 0.0
         self.avoid_id, self.avoid_pending, self.avoid_next, self.avoid_tries = 0, None, 0.0, 0
@@ -232,6 +259,7 @@ class OperationManager(Node):
         self.idx, self.v = 0, 0.0
         self.avoiding, self.avoid_pending, self.avoid_tries = False, None, 0
         self.block_since, self.avoid_status = None, 'idle'
+        self.orig_path, self.gone_since = None, None
         self.detour_pub.publish(MarkerArray(markers=[Marker(action=Marker.DELETEALL)]))
         if self.mode == 'auto':
             self.mode = 'stop'
@@ -314,8 +342,8 @@ class OperationManager(Node):
         corridor = self.avoid_hw if self.avoiding else self.safe_half_width
         if lat - half_lat > corridor:
             return None
-        dist = self.seg[j] - self.seg[self.idx] - FRONT_OFFSET - half_lon
-        return dist if -half_lon * 2 < dist < DETECT_RANGE else None
+        dist = self.seg[j] - self.seg[self.idx] - self.front_offset - half_lon
+        return dist if -half_lon * 2 < dist < self.detect_range else None
 
     def update_memory(self):
         """Remember blocking LiDAR/radar obstacles through sensor drop-outs.
@@ -387,19 +415,31 @@ class OperationManager(Node):
                 7: 'pedestrian', 8: 'animal'}.get(obs[1], 'obstacle')
 
     # -- detour around a blocked lane ----------------------------------------------
-    def update_avoidance(self, obs, now):
-        """Blocked for avoid_after_sec -> ask the planner for a detour; adopt it; leave it when done."""
+    def update_avoidance(self, obs, now, stopped=True):
+        """Obstacle ahead AND the vehicle stopped for avoid_after_sec -> ask the planner for a detour;
+        adopt it; go back to the original route if the obstacle disappears; leave the detour when done."""
         if not self.avoid_enabled:
             return
+        if self.msg.startswith('Route restored') and now > self.restored_until:
+            self.msg = ''
+        fresh = self.room_needed is not None and now - self.room_time < 6.0
+        self.stop_margin = (max(self.stop_margin_base, min(20.0, self.room_needed + 0.5))
+                            if (fresh and obs is not None and self.avoid_stop_early and self.avoid_probe) else self.stop_margin_base)
+        if (self.avoid_stop_early and self.avoid_probe and not self.avoiding and obs is not None and not stopped and self.avoid_pending is None
+                and now >= self.probe_next and (self.probe_pending is None or now - self.probe_pending[1] > 4.0)):
+            self.probe_next = now + 1.5
+            self.request_avoidance(now, probe=True)
         if self.avoiding:
             if self.idx >= self.avoid_end_idx:
                 self.avoiding, self.avoid_tries, self.block_since = False, 0, None
-                self.avoid_status = 'idle'
+                self.avoid_status, self.orig_path = 'idle', None
                 self.detour_pub.publish(MarkerArray(markers=[Marker(action=Marker.DELETEALL)]))
                 self.get_logger().info('detour finished: back on the lanelet path')
                 self.msg = ''
+            else:
+                self.check_obstacle_gone(now)
             return
-        if obs is not None:
+        if obs is not None and stopped:
             self.block_since = self.block_since or now
             self.block_last = now
         elif now - self.block_last > 1.0:
@@ -413,11 +453,81 @@ class OperationManager(Node):
                 self.avoid_next = now + self.avoid_retry
                 self.avoid_status = 'planner not answering'
             return
-        if (self.block_since is not None and now - self.block_since >= self.avoid_after
+        if self.block_since is not None and self.avoid_status not in ('no detour', 'planning'):
+            self.avoid_status = f'stopped {now - self.block_since:.0f}/{self.avoid_after:.0f} s'
+            self.avoid_wait = now - self.block_since
+        if (stopped and self.block_since is not None and now - self.block_since >= self.avoid_after
                 and now >= self.avoid_next and self.avoid_tries < self.avoid_max_tries):
             self.request_avoidance(now)
 
-    def request_avoidance(self, now):
+    # -- obstacle gone while detouring: back to the original route ------------------------------
+    def check_obstacle_gone(self, now):
+        if self.orig_path is None or not self.avoid_blockers:
+            return
+        sensors_alive = (not self.live) or (now - self.lidar_time < 0.7)
+        present = any(math.hypot(o[0] - b[0], o[1] - b[1]) < 1.5
+                      for o in self.all_objects() for b in self.avoid_blockers)
+        # only while the vehicle is still before the obstacle (beside / past it the detector no longer sees it)
+        op, oseg = self.orig_path, self.orig_seg
+        lo, hi = self.avoid_req_idx, min(len(op), self.avoid_req_idx + self.avoid_ib + 60)
+        j = min(range(lo, hi), key=lambda i: math.hypot(op[i][0] - self.rx, op[i][1] - self.ry))
+        sblock = min(oseg[min(range(len(op)), key=lambda i: math.hypot(op[i][0] - b[0], op[i][1] - b[1]))]
+                     for b in self.avoid_blockers)
+        before = oseg[j] + self.front_offset + 1.0 < sblock - 1.5
+        if present or not sensors_alive or not before:
+            self.gone_since = None
+            return
+        self.gone_since = self.gone_since or now
+        if now - self.gone_since >= self.avoid_clear_sec:
+            self.revert_to_original()
+
+    def revert_to_original(self):
+        op, oseg = self.orig_path, self.orig_seg
+        lo, hi = self.avoid_req_idx, min(len(op), self.avoid_req_idx + self.avoid_ib + 60)
+        j = min(range(lo, hi), key=lambda i: math.hypot(op[i][0] - self.rx, op[i][1] - self.ry))
+        k0, k1 = max(j - 1, 0), min(j + 1, len(op) - 1)
+        tx, ty = op[k1][0] - op[k0][0], op[k1][1] - op[k0][1]
+        n = math.hypot(tx, ty) or 1.0
+        nx, ny = -ty / n, tx / n
+        e = (self.rx - op[j][0]) * nx + (self.ry - op[j][1]) * ny      # + = vehicle left of the route
+        tail_from, trans = j, []
+        if abs(e) >= 0.15:
+            R0 = self.wheelbase / math.tan(math.radians(self.max_steer * 0.75))
+            for kk in (1.0, 1.4, 2.0, 2.8, 4.0):
+                L = shift_length(e, R0 * kk)
+                pts = []
+                i = j
+                while i < len(op) and oseg[i] - oseg[j] <= L:
+                    a, b = op[max(i - 1, 0)], op[min(i + 1, len(op) - 1)]
+                    m = math.hypot(b[0] - a[0], b[1] - a[1]) or 1.0
+                    off = e - float(arc_shift(oseg[i] - oseg[j], L, e, R0 * kk))
+                    pts.append((op[i][0] - (b[1] - a[1]) / m * off, op[i][1] + (b[0] - a[0]) / m * off, op[i][2]))
+                    i += 1
+                if i >= len(op) - 1:
+                    break
+                trans, tail_from = pts, i
+                probe = [(self.rx, self.ry, 0.0)] + pts + [tuple(q[:3]) for q in op[i:i + 8]]
+                if max_steer_deg(probe, self.wheelbase) <= self.max_steer * 0.95:
+                    break
+        new = []
+        pts_all = trans + [tuple(q[:3]) for q in op[tail_from:]]
+        for i, q in enumerate(pts_all):
+            a, b = (pts_all[i], pts_all[i + 1]) if i + 1 < len(pts_all) else (pts_all[i - 1], pts_all[i])
+            yaw = math.atan2(b[1] - a[1], b[0] - a[0])
+            new.append((q[0], q[1], q[2], math.sin(yaw / 2), math.cos(yaw / 2)))
+        self.path = self.path[:self.idx] + new
+        self.seg = [0.0]
+        for a, b in zip(self.path, self.path[1:]):
+            self.seg.append(self.seg[-1] + math.hypot(b[0] - a[0], b[1] - a[1]))
+        self.avoiding, self.avoid_tries, self.block_since = False, 0, None
+        self.avoid_status, self.orig_path, self.gone_since = 'idle', None, None
+        self.hold_obstacle, self.clear_since = False, None
+        self.msg = 'Route restored - obstacle cleared, back to the original route'
+        self.restored_until = self.mono() + 6.0
+        self.get_logger().info(self.msg + f' (was {abs(e):.1f} m off the lane centre)')
+        self.detour_pub.publish(MarkerArray(markers=[Marker(action=Marker.DELETEALL)]))
+
+    def request_avoidance(self, now, probe=False):
         pts = [[p[0], p[1], p[2]] for p in self.path[self.idx:self.idx + 130]]
         if len(pts) < 6:
             return
@@ -425,18 +535,30 @@ class OperationManager(Node):
         for o in self.all_objects() + self.remembered():
             obstacles.append([o[0], o[1], o[2], o[3], o[4]])
         self.avoid_id += 1
+        if probe:           # "how much room would a detour need?" - the answer moves the stop line
+            self.probe_pending = (self.avoid_id, now)
+            self.avoid_pub.publish(String(data=json.dumps(
+                {'id': self.avoid_id, 'points': pts, 'obstacles': obstacles, 'probe': True})))
+            return
+        self.avoid_pending_blockers = [(o[0], o[1]) for o in obstacles]
         self.avoid_pending = (self.avoid_id, now, self.idx)
         self.avoid_status = 'planning'
         self.avoid_pub.publish(String(data=json.dumps(
             {'id': self.avoid_id, 'points': pts, 'obstacles': obstacles})))
-        self.get_logger().info(f'blocked for {now - self.block_since:.0f} s: asking for a detour')
+        self.get_logger().info(f'stopped for {now - self.block_since:.0f} s in front of the obstacle: asking for a detour')
 
     def on_avoid_result(self, msg):
-        if self.avoid_pending is None:
-            return
         try:
             d = json.loads(msg.data)
         except ValueError:
+            return
+        if d.get('probe'):
+            if self.probe_pending is not None and d.get('id') == self.probe_pending[0]:
+                self.probe_pending = None
+                if d.get('room_needed') is not None:
+                    self.room_needed, self.room_time = float(d['room_needed']), self.mono()
+            return
+        if self.avoid_pending is None:
             return
         pid, _, req_idx = self.avoid_pending
         if d.get('id') != pid:
@@ -460,6 +582,9 @@ class OperationManager(Node):
                 a, b = seg[i - 1], seg[i]
             yaw = math.atan2(b[1] - a[1], b[0] - a[0])
             new.append((q[0], q[1], q[2], math.sin(yaw / 2), math.cos(yaw / 2)))
+        self.orig_path, self.orig_seg = list(self.path), list(self.seg)
+        self.avoid_req_idx, self.avoid_ib = req_idx, ib
+        self.avoid_blockers, self.gone_since = list(self.avoid_pending_blockers), None
         self.path = self.path[:req_idx] + new + self.path[req_idx + ib:]
         self.seg = [0.0]
         for a, b in zip(self.path, self.path[1:]):
@@ -470,14 +595,32 @@ class OperationManager(Node):
         self.hold_obstacle, self.clear_since = False, None
         self.msg = f"Detour {d['side']} by {abs(d['offset']):.1f} m around the obstacle"
         self.get_logger().info(self.msg + f" ({d['length']:.0f} m, LiDAR free space: {d.get('sensed')})")
+        inside = d.get('inside') or [True] * len(seg)
+        stamp = self.get_clock().now().to_msg()
         m = Marker()
-        m.header.frame_id, m.header.stamp = 'map', self.get_clock().now().to_msg()
+        m.header.frame_id, m.header.stamp = 'map', stamp
         m.ns, m.id, m.type, m.action = 'detour', 0, Marker.LINE_STRIP, Marker.ADD
         m.pose.orientation.w = 1.0
         m.scale.x = 0.35
         m.color.r, m.color.g, m.color.b, m.color.a = 0.0, 0.9, 1.0, 1.0
         m.points = [Point(x=q[0], y=q[1], z=q[2] + 0.15) for q in seg]
-        self.detour_pub.publish(MarkerArray(markers=[m]))
+        # cyan = inside the lane, magenta = outside the lane (free space found by the LiDAR)
+        m.colors = [ColorRGBA(r=0.0, g=0.9, b=1.0, a=1.0) if ins else ColorRGBA(r=1.0, g=0.2, b=0.9, a=1.0)
+                    for ins in inside]
+        markers = [m]
+        outs = [q for q, ins in zip(seg, inside) if not ins]
+        if outs:
+            t = Marker()
+            t.header = m.header
+            t.ns, t.id, t.type, t.action = 'detour_label', 1, Marker.TEXT_VIEW_FACING, Marker.ADD
+            mid = outs[len(outs) // 2]
+            t.pose.position.x, t.pose.position.y, t.pose.position.z = mid[0], mid[1], mid[2] + 1.6
+            t.pose.orientation.w = 1.0
+            t.scale.z = 0.6
+            t.color.r, t.color.g, t.color.b, t.color.a = 1.0, 0.2, 0.9, 1.0
+            t.text = 'DETOUR OUTSIDE THE LANE'
+            markers.append(t)
+        self.detour_pub.publish(MarkerArray(markers=markers))
 
     # -- planning display (Autoware-style stop / slow zones) -----------------
     def ribbon(self, a, b, half_w, z, rgba, mid, ns, now):
@@ -519,7 +662,7 @@ class OperationManager(Node):
         s_stop = self.stopping_distance(max(self.v, cruise / 3.6))
         s_slow = self.stopping_distance(preset / 3.6) + self.slow_zone
         hw = self.zone_half_width
-        sb = self.seg[self.idx] + FRONT_OFFSET          # front bumper, arclength
+        sb = self.seg[self.idx] + self.front_offset          # front bumper, arclength
         # a stop line / zone is measured at the front bumper; the strip drawn is the road there
         out = []
         for a, b, rgba, ns, z in (
@@ -566,14 +709,14 @@ class OperationManager(Node):
         now = self.get_clock().now().to_msg()
         arr = MarkerArray()
         obs = self.obstacle_ahead()
-        sb = self.seg[self.idx] + FRONT_OFFSET
+        sb = self.seg[self.idx] + self.front_offset
         mid = 0
         if obs is not None:
             what = self.obs_name(obs)
             arr.markers += self.zone_markers(sb + obs[0] - self.stop_margin, f'STOP: {what}',
                                              now, mid, buffer_m=self.stop_margin)
             mid += 10
-        arr.markers += self.zone_markers(self.seg[-1] - self.goal_margin + FRONT_OFFSET,
+        arr.markers += self.zone_markers(self.seg[-1] - self.goal_margin + self.front_offset,
                                          'GOAL', now, mid)
         self.zone_pub.publish(arr)
 
@@ -696,7 +839,7 @@ class OperationManager(Node):
                 remaining = self.seg[-1] - self.seg[self.idx]
                 self.update_memory()
                 obs = self.obstacle_ahead()
-                self.update_avoidance(obs, self.mono())
+                self.update_avoidance(obs, self.mono(), self.hold_obstacle and self.v < self.stop_speed)
                 if self.avoiding:       # the detour may have just replaced the path
                     obs = self.obstacle_ahead()
                 preset = 2.0 if self.limit_kmh <= 3.0 else 4.0
@@ -774,12 +917,12 @@ class OperationManager(Node):
                          math.sqrt(2.0 * ACCEL * max(remaining, 0.0)) + 0.05)
             self.update_memory()
             obs = self.obstacle_ahead()
-            self.update_avoidance(obs, self.mono())
+            self.update_avoidance(obs, self.mono(), obs is not None and self.v < 0.05)
             if self.avoiding:
                 obs = self.obstacle_ahead()
                 target = min(target, 2.0 / 3.6)
             if obs is not None:
-                target = min(target, math.sqrt(2.0 * ACCEL * max(obs[0] - STOP_MARGIN, 0.0)))
+                target = min(target, math.sqrt(2.0 * ACCEL * max(obs[0] - self.stop_margin, 0.0)))
                 self.msg = f'Obstacle ahead: {self.obs_name(obs)} {max(obs[0], 0):.1f} m'
             elif self.msg.startswith('Obstacle'):
                 self.msg = ''
@@ -884,7 +1027,9 @@ class OperationManager(Node):
             'gear': self.gear, 'turn_signal': self.turn_signal,
             'auto_available': str(self.auto_available()).lower(),
             'progress': f'{progress:.0f}', 'steering': f'{self.steer:.1f}',
-            'cte': f'{self.cte:.2f}', 'msg': self.msg + ((' | no detour: ' + self.avoid_note[:110])
+            'cte': f'{self.cte:.2f}', 'msg': self.msg + (f' | replanning in {max(self.avoid_after - self.avoid_wait, 0):.0f} s'
+                               if self.avoid_enabled and self.avoid_status.startswith('stopped') else '')
+                               + ((' | no detour: ' + self.avoid_note[:110])
                                if self.avoid_enabled and self.avoid_note and self.avoid_status == 'no detour'
                                and self.msg.startswith('Obstacle') else ''),
         }

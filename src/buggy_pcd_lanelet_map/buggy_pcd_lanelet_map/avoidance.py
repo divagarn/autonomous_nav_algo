@@ -251,6 +251,8 @@ def plan_detour(points, obstacles, lane=None, free=None, prm=None):
     z = zones[0]
     clr = prm.veh_half_width + prm.side_margin
     R0 = prm.wheelbase / math.tan(math.radians(prm.max_steer_deg * prm.steer_frac))
+    # bumper-to-obstacle gap a forward-only shift around this zone needs (also reported when it works)
+    need = shift_length(clr + (z['hi'] - z['lo']) / 2, R0) + prm.lead
     best, why = None, []
     for side, d0 in (('left', z['hi'] + clr), ('right', z['lo'] - clr)):
         last, sign = '', (1.0 if d0 > 0 else -1.0)
@@ -274,10 +276,12 @@ def plan_detour(points, obstacles, lane=None, free=None, prm=None):
                 if not ok:
                     last = reason
                     continue
+                inside = lane.inside(seg[:, :2]) if lane is not None else np.ones(len(seg), dtype=bool)
                 best_side = {'ok': True, 'side': side, 'offset': float(d), 'segment': seg.tolist(),
                              'ib': ib, 'length': float(route.s[ib - 1]), 'shift_length': float(L),
                              'radius': float(R), 'room_before': float(z['s0'] - prm.front),
-                             'outside_lane': bool(lane is not None and not lane.inside(seg[:, :2]).all())}
+                             'outside_lane': bool(not inside.all()),
+                             'inside': [bool(v) for v in inside], 'zone': z, 'room_needed': float(need)}
                 last = ''
                 break
             if not last:
@@ -291,8 +295,33 @@ def plan_detour(points, obstacles, lane=None, free=None, prm=None):
     if best is not None:
         return best
     # why too close? the shift needs `shift_length + lead` before the bumper reaches the obstacle
-    need = shift_length(clr + (z['hi'] - z['lo']) / 2, R0) + prm.lead
     have = z['s0'] - prm.front
     extra = f' (needs ~{need:.1f} m before the obstacle, have {have:.1f} m)' if have < need else ''
     return {'ok': False, 'reason': '; '.join(why) + extra if why else 'no feasible detour' + extra,
-            'room_before': float(have), 'zone': z}
+            'room_before': float(have), 'zone': z, 'room_needed': float(need)}
+
+
+def free_space_cells(points, zone, free, lane, prm=None, stride=2, max_cells=4000):
+    """Free ground outside the lane around a blocked zone, for the RViz display: cell centres (N, 2)
+    of cells the LiDAR has seen as ground, that are not solid and not inside a lane, within
+    max_offset of the route and 6 m before / after the zone. Every `stride`-th cell, raster order."""
+    prm = prm or Params()
+    if free is None or free.gnd is None:
+        return np.zeros((0, 2))
+    route = Route(points)
+    ok = free.gnd & ~free.occ
+    ij = np.argwhere(ok)
+    ij = ij[(ij[:, 0] % stride == 0) & (ij[:, 1] % stride == 0)]
+    if not len(ij):
+        return np.zeros((0, 2))
+    xy = free.origin + (ij + 0.5) * free.res
+    near = (np.abs(xy[:, 0] - route.p[:, 0].mean()) < 200)      # cheap guard, the grid is local anyway
+    xy = xy[near]
+    s, e = route.to_frenet(xy[:, 0], xy[:, 1])
+    m = (s >= zone['s0'] - 6.0) & (s <= zone['s1'] + 6.0) & (np.abs(e) <= prm.max_offset)
+    xy = xy[m]
+    if lane is not None and len(xy):
+        xy = xy[~lane.inside(xy)]
+    if len(xy) > max_cells:
+        xy = xy[np.linspace(0, len(xy) - 1, max_cells).astype(int)]
+    return xy
