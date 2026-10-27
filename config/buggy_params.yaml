@@ -54,14 +54,17 @@ operation_manager:
     avoid_corridor_half_width: 1.05  # lateral band that counts as blocking while on a detour
     avoid_retry_sec: 5.0
     avoid_max_tries: 6
-    avoid_clear_sec: 2.0             # obstacle gone this long during a detour -> back to the original route
+    avoid_clear_sec: 1.0             # obstacle gone this long during a detour -> back to the original route (the vehicle keeps
+                                     # moving, so a longer time can run out before it passes the obstacle: 2.0 is too long at 5 km/h)
     avoid_stop_early: true          # false = stop at stop_margin (2.5 m) like without --avoid. true = with --avoid stop
                                      # earlier (avoid_stop_margin / planner probe) so a detour has room; costs distance
-    avoid_probe: true                # with avoid_stop_early: true = the stop line follows the planner's room estimate
-                                     # (wide obstacles stop further away); false = exactly avoid_stop_margin
-    avoid_stop_margin: 7.5           # with avoid_stop_early: stop at least this far before the obstacle
-                                     # (a detour from a standstill needs ~7 m: no reverse, 4.4 m turning radius);
-                                     # wide obstacles move the stop line back further (planner probe, up to 20 m)
+    avoid_probe: true                # while approaching, ask the planner how much room a detour needs: shown as
+                                     # detour_room in /system/state, warns if the stop line is closer; false = no probing
+    avoid_stop_follow_planner: false # true = that estimate also moves the stop line back (wide obstacles stop further
+                                     # away, up to 20 m); false = the stop line is exactly avoid_stop_margin
+    avoid_stop_margin: 4.0           # with avoid_stop_early: stop exactly this far before the obstacle (bumper to near
+                                     # edge). A detour from a standstill needs room: ~3 m on a straight lane with space
+                                     # beside it, more on a bend (no reverse, 4.4 m turning radius)
 
 # ---------------------------------------------------------------- planning
 route_planner:
@@ -88,7 +91,7 @@ avoidance_planner:
     footprint_margin: 0.15           # extra body margin in the swept-area check
     lead: 1.0                        # the shift is complete this far before the bumper meets the obstacle
     tail: 0.6                        # rejoin starts this far behind the obstacle (+ rear overhang)
-    offlane_allow_m: 0.8             # without LiDAR (view): drivable outside the lane by this much; the front corners swing
+    offlane_allow_m: 3.0             # without LiDAR (view): drivable outside the lane by this much; the front corners swing
                                      # ~1.5 m wide during a detour, so 3.0 is needed to pass an obstacle in a 3 m lane
     offlane_allow_sensed_m: 8.0      # with LiDAR: where free ground was seen, up to this far outside the lane
     ground_fraction: 0.65            # share of out-of-lane body samples that must lie on seen ground
@@ -204,3 +207,30 @@ uart_bridge:
 map_display_cloud:
   ros__parameters:
     voxel_size: 0.3                  # RViz shows the map thinned to one point per voxel (0 = full map)
+
+# ---------------------------------------------------------------- radar driver (umrr_ros2_driver, live --radar)
+# No node of this name runs: it is read by umrr_ros2_driver/launch/radar.launch.py (the ros__parameters
+# wrapper is needed because ROS parses every top-level key of this file). Pick the radar hardware with
+# `model`; the same buggy can carry either, no rebuild needed (both vendor libraries are installed).
+#   ./buggy live ... --radar radar_model:=umrr9f can_interface:=can4     (command line wins over this file)
+radar_driver:
+  ros__parameters:
+    model: umrra4                # umrra4 (UMRR-A4 / T171) | umrr9f (UMRR-9F / T169) | any key of `models` below
+    can_interface: can0          # SocketCAN interface (./buggy can <iface> brings it up)
+    baudrate: 500000
+    dev_id: 2                    # must match the hw_inventory adapter
+    sensor_id: 700
+    frame_id: umrr
+    models:                      # Smart Access user interface of each model (check with the Smart Access tool)
+      umrra4:
+        model: umrra4_can_v1_2_1
+        uifname: umrra4_automotive
+        uifmajorv: 1
+        uifminorv: 2
+        uifpatchv: 1
+      umrr9f:
+        model: umrr9f_can_v2_1_1
+        uifname: umrr9f_t169_automotive
+        uifmajorv: 2
+        uifminorv: 1
+        uifpatchv: 1

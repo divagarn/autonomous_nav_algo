@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
-"""radar_fusion tracks -> the obstacle format the AUTO logic uses.
+"""sensor_fusion objects -> the obstacle format the AUTO logic uses.
 
-/radar_fusion/objects (perception_msgs/FusedObjectArray, radar_fusion's IMM-tracked radar
-objects; class_name is "unknown" until a camera association votes a class) is converted to
+/sensor_fusion/objects (objects_topic; perception_msgs/FusedObjectArray, sensor_fusion's radar
+tracks (EKF tracker or IMM), class from the camera fusion, "unknown" without a camera box) is converted to
   /perception/radar_objects         autoware_perception_msgs/PredictedObjects   (map frame)
   /perception/radar_objects_marker  RViz boxes (orange; a velocity arrow if moving) + text
 Published for EVERY radar cycle, even empty, so subscribers can tell "radar alive, nothing
@@ -31,7 +31,8 @@ class RadarObjectBridge(Node):
         TransformListener(self.tf, self)
         self.pub = self.create_publisher(PredictedObjects, '/perception/radar_objects', 1)
         self.marker_pub = self.create_publisher(MarkerArray, '/perception/radar_objects_marker', 1)
-        self.create_subscription(FusedObjectArray, '/radar_fusion/objects', self.on_objects, 5)
+        topic = self.declare_parameter('objects_topic', '/sensor_fusion/objects').value
+        self.create_subscription(FusedObjectArray, topic, self.on_objects, 5)
 
     def to_map(self, frame, x, y, yaw):
         """(x, y, yaw) in `frame` -> map frame (identity if already in map)."""

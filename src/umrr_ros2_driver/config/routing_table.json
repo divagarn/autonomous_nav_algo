@@ -9,9 +9,9 @@
             "ip": "",
             "link_type": "can",
             "port": 0,
-            "user_interface_major_v": 1,
-            "user_interface_minor_v": 2,
-            "user_interface_name": "umrra4_automotive",
+            "user_interface_major_v": 2,
+            "user_interface_minor_v": 1,
+            "user_interface_name": "umrr9f_t169_automotive",
             "user_interface_patch_v": 1
         }
     ],

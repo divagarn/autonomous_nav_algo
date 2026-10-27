@@ -1,0 +1,15 @@
+<?xml version="1.0"?>
+<package format="3">
+  <name>sensor_fusion_tests</name>
+  <version>0.1.0</version>
+  <description>Unit tests of the fusion core modules (no ROS): fusion, IMM tracker, ByteTrack, lane estimation.</description>
+  <maintainer email="gowtham2351995@gmail.com">gowtham</maintainer>
+  <license>Proprietary</license>
+  <buildtool_depend>cmake</buildtool_depend>
+  <depend>sensor_fusion_core</depend>
+  <depend>imm_tracker</depend>
+  <depend>byte_tracker</depend>
+  <depend>lane_estimation</depend>
+  <test_depend>gtest</test_depend>
+  <export><build_type>cmake</build_type></export>
+</package>

@@ -43,7 +43,11 @@ struct CoreParams
   // on the stop line is kept at least avoid_stop_margin away.
   double avoid_clear_sec = 2.0, avoid_stop_margin = 7.5, stop_speed = 0.15;
   bool avoid_stop_early = false;  // true: with avoidance stop far enough before the obstacle for a detour
-  bool avoid_probe = true;        // with avoid_stop_early: follow the planner's room estimate; false = exactly avoid_stop_margin
+  // with avoid_stop_early the stop line is ALWAYS avoid_stop_margin. avoid_probe: ask the planner how much room a
+  // detour needs while approaching, show it (state key detour_room), warn when the stop line is closer.
+  // avoid_stop_follow_planner: that answer also moves the stop line back (up to 20 m); default false.
+  bool avoid_probe = true;
+  bool avoid_stop_follow_planner = false;
   int avoid_max_tries = 6;
   double memory_sec = 4.0, memory_max_sec = 25.0, creep_sec = 10.0;
   int memory_min_hits = 5;
@@ -157,12 +161,14 @@ private:
   std::vector<PathPt> orig_path_;
   std::vector<double> orig_seg_;
   size_t avoid_req_idx_ = 0, avoid_ib_ = 0;
-  std::vector<std::array<double, 2>> avoid_blockers_, pending_blockers_;
+  std::vector<std::array<double, 3>> avoid_blockers_, pending_blockers_;   // x, y, half extent
   std::optional<double> gone_since_;
   double restored_until_ = 0.0, last_now_ = 0.0, avoid_wait_ = 0.0;
   // planner probe: how much room a detour needs; moves the stop line (see update_avoidance)
   double stop_margin_base_ = 2.5, room_time_ = -10.0, probe_next_ = 0.0;
   std::optional<double> room_needed_;
+  bool room_warned_ = false;
+  double last_obs_time_ = 0.0;
   std::optional<std::pair<int, double>> probe_pending_;
   std::string avoid_status_ = "idle", avoid_note_;
 

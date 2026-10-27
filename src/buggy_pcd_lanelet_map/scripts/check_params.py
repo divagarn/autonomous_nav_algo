@@ -125,6 +125,40 @@ def same(a, b):
     return a == b
 
 
+RADAR_KEYS = {'model': str, 'can_interface': str, 'baudrate': int, 'dev_id': int, 'sensor_id': int,
+              'frame_id': str, 'models': dict}
+RADAR_MODEL_KEYS = {'model': str, 'uifname': str, 'uifmajorv': int, 'uifminorv': int, 'uifpatchv': int}
+
+
+def check_radar_driver(body):
+    """radar_driver: (read by umrr_ros2_driver/launch/radar.launch.py, not a ROS node section)."""
+    err = []
+    body = (body or {}).get('ros__parameters') if isinstance(body, dict) else None
+    if not isinstance(body, dict):
+        return ['radar_driver: needs a "ros__parameters:" section']
+    for k, v in body.items():
+        if k not in RADAR_KEYS:
+            err.append(f'radar_driver.{k}: unknown key (known: {", ".join(RADAR_KEYS)})')
+        elif not isinstance(v, RADAR_KEYS[k]) or isinstance(v, bool):
+            err.append(f'radar_driver.{k}: must be {RADAR_KEYS[k].__name__}, not {kind(v)}')
+    models = body.get('models') if isinstance(body.get('models'), dict) else {}
+    for name, m in models.items():
+        if not isinstance(m, dict):
+            err.append(f'radar_driver.models.{name}: must be a mapping')
+            continue
+        for k, t in RADAR_MODEL_KEYS.items():
+            if k not in m:
+                err.append(f'radar_driver.models.{name}.{k}: missing')
+            elif not isinstance(m[k], t) or isinstance(m[k], bool):
+                err.append(f'radar_driver.models.{name}.{k}: must be {t.__name__}, not {kind(m[k])}')
+        for k in m:
+            if k not in RADAR_MODEL_KEYS:
+                err.append(f'radar_driver.models.{name}.{k}: unknown key')
+    if 'model' in body and models and body['model'] not in models:
+        err.append(f'radar_driver.model: {body["model"]!r} is not in radar_driver.models ({", ".join(models)})')
+    return err
+
+
 def check_file(path, strict_defaults):
     errors, warnings, nparams = [], [], 0
     notes = []
@@ -135,6 +169,9 @@ def check_file(path, strict_defaults):
     py_decl = {n: py_declarations(os.path.join(SRC, f)) for n, f in PY.items() if os.path.exists(os.path.join(SRC, f))}
     cpp_decl = {n: cpp_declarations(os.path.join(SRC, f)) for n, f in CPP.items() if os.path.exists(os.path.join(SRC, f))}
     for node, body in data.items():
+        if node == 'radar_driver':
+            errors += check_radar_driver(body)
+            continue
         if node not in PY and node not in CPP:
             errors.append(f'{node}: unknown node (known: {", ".join(sorted(set(PY) | set(CPP)))})')
             continue
@@ -162,7 +199,7 @@ def check_file(path, strict_defaults):
                     notes.append(f'{node}.{name} = {val!r} (built-in {lang} default: {default!r})')
             if len(decls) == 1 and node in CPP and node in PY:
                 warnings.append(f'{node}.{name}: only the {decls[0][0]} node has this parameter')
-    flat = {(n, k): v for n, b in data.items() if isinstance(b, dict) for k, v in (b.get('ros__parameters') or {}).items()}
+    flat = {(n, k): v for n, b in data.items() if n != 'radar_driver' and isinstance(b, dict) for k, v in (b.get('ros__parameters') or {}).items()}
     for what, members in SAME:
         vals = [(f'{n}.{k}', flat[(n, k)]) for n, k in members if (n, k) in flat]
         if len({round(float(v), 9) for _, v in vals if isinstance(v, (int, float))}) > 1:

@@ -1,0 +1,22 @@
+<?xml version="1.0"?>
+<package format="3">
+  <name>sensor_fusion</name>
+  <version>0.1.0</version>
+  <description>ROS 2 node of the fusion: radar tracks (EKF tracker node, or the IMM tracker in the node: radar.tracker) fused with the camera objects (ByteTrack in the node), configurable output frame.</description>
+  <maintainer email="gowtham2351995@gmail.com">gowtham</maintainer>
+  <license>Proprietary</license>
+  <buildtool_depend>ament_cmake</buildtool_depend>
+  <depend>rclcpp</depend>
+  <depend>sensor_msgs</depend>
+  <depend>nav_msgs</depend>
+  <depend>std_msgs</depend>
+  <depend>geometry_msgs</depend>
+  <depend>perception_msgs</depend>
+  <depend>tf2</depend>
+  <depend>tf2_ros</depend>
+  <depend>sensor_fusion_core</depend>
+  <depend>imm_tracker</depend>    <!-- SF_WITH_IMM -->
+  <depend>byte_tracker</depend>   <!-- SF_WITH_BYTETRACK -->
+  <depend>lane_estimation</depend> <!-- SF_WITH_LANE -->
+  <export><build_type>ament_cmake</build_type></export>
+</package>

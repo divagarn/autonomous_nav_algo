@@ -133,6 +133,20 @@ Visualization Manager:
           Enabled: true
           Topic:
             Value: /perception/objects_marker
+        # sensor_fusion (--radar / --camera): fused tracks + camera lane / road edges + tracked path (map)
+        - Class: rviz_default_plugins/MarkerArray
+          Name: Fusion (tracks, lane)
+          Enabled: true
+          Topic:
+            Value: /fusion_visualization/markers
+        - Class: rviz_default_plugins/Path
+          Name: Lane Path (camera, 20 m)
+          Enabled: true
+          Topic:
+            Value: /sensor_fusion/lane_path
+          Color: 0; 220; 120
+          Line Style: Billboards
+          Line Width: 0.08
   Tools:
     - Class: rviz_default_plugins/MoveCamera
     - Class: rviz_default_plugins/Select

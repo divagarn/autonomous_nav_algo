@@ -1,0 +1,11 @@
+# build output
+/build/
+/install/
+/log/
+
+# python cache
+__pycache__/
+*.pyc
+
+# archives
+*.zip

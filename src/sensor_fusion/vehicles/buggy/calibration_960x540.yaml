@@ -1,0 +1,27 @@
+camera_model: opencv_fisheye
+image_width: 960
+image_height: 540
+K:
+  - [433.64663603621375, 0, 448.5078219148067]
+  - [0, 433.64663603621375, 262.32082657102228]
+  - [0, 0, 1]
+D: [-0.089535802532743874, 0.16258548907194209, 0, 0]
+radar_frame: umrr
+camera_frame: camera
+R_radar_to_camera:
+  - [0.046739173027776505, -0.99836888118909228, -0.032787600978414488]
+  - [-0.54362160091117739, 0.002114568631726441, -0.83932775697117878]
+  - [0.83802804531080466, 0.05705353339401404, -0.54263605630275813]
+t_radar_to_camera: [0.18763697320462441, 0.97985866717631265, 1.9533965867877556]
+camera_position_in_radar: [-1.1130987829824799, 0.073810759210823973, 1.8885581637258704]
+camera_quaternion_xyzw_in_radar: [0.62993266717539109, -0.61196639039793432, 0.31957401413355679, -0.3557448823794746]
+info:
+  method: joint fisheye intrinsics + extrinsics from corner reflector; no checkerboard
+  points_source: auto
+  reflector_height_source: radar median z
+  reflector_height_m: 0.734386384
+  n_points: 58
+  n_inliers: 42
+  median_reproj_px_at_1920: 10.00691903570832
+  loo_median_px_at_1920: 10.913950473533616
+  convention: "p_cam_optical = R * p_radar + t; radar: x fwd y left z up; optical: x right y down z fwd"

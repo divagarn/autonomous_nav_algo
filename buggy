@@ -2,6 +2,10 @@
 # buggy - one entry point for the PCD + Lanelet2 localisation / AUTO stack.
 # Run `./buggy help`. Everything it needs is inside this folder.
 HERE="$(cd "$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")" && pwd)"
+# Python: Ubuntu's own packages first. pip-installed NumPy 2 (~/.local, /usr/local) breaks the system
+# OpenCV / SciPy (built for NumPy 1) and ament_python builds; ROS paths still come first.
+export PYTHONNOUSERSITE=1
+export PYTHONPATH="/usr/lib/python3/dist-packages${PYTHONPATH:+:$PYTHONPATH}"
 # shellcheck disable=SC1091
 source "$HERE/setup.bash"
 PKG=buggy_pcd_lanelet_map
@@ -17,13 +21,16 @@ buggy - PCD + Lanelet2 localisation, routing and AUTO driving for the buggy
   ./buggy view   [MAP]                       map + RViz + simulated AUTO (no sensors, no hardware)
   ./buggy live   [MAP] [options]             REAL buggy: VLP-16 + ECU feedback + NDT localisation
   ./buggy replay BAG [MAP] [options]         same stack on a recorded rosbag (no hardware)
-  ./buggy sim    [MAP] [--radar] [gui:=true] Gazebo + emulated ECU, closed loop (no hardware)
+  ./buggy sim    [MAP] [--radar] [--init X,Y,YAW] [gui:=true] Gazebo + emulated ECU, closed loop (no hardware)
 
+  ./buggy can [IFACE] [BITRATE]              bring up the radar CAN (default can0 500000, sudo; Orin, before live --radar)
+  ./buggy can --status [IFACE]               show the CAN interface state
   ./buggy calibrate-brake [--preset 2|4] [--live]   measure the real stopping behaviour
   ./buggy add-map NAME FILE.osm [--pcd FILE.pcd]    create a map folder from a Vector Map Builder export
   ./buggy sim-map [--save]                   record a PCD of the Gazebo world (then --save)
   ./buggy params-check [FILE]                check config/buggy_params.yaml (or your own file) against the nodes
   ./buggy stop                               stop a running launch cleanly (Ctrl+C also works)
+  ./buggy kill [--list]                      stop EVERY ROS process (hung runs, Gazebo, RViz, bags) + DDS reset
   ./buggy ros2 ...                           any ros2 command inside this environment
 
 live / replay options
@@ -32,20 +39,28 @@ live / replay options
   --real         with --drive: uart_writer REALLY WRITES to the ECU (the buggy moves in AUTO)
   --no-rviz      do not open RViz
   --no-detector  no LiDAR obstacle detection (AUTO then refuses to start)
-  --radar        add radar obstacles (umrr radar on CAN + radar_fusion; Gazebo: synthetic radar)
+  --radar        add radar obstacles: sensor_fusion radar tracks (umrr radar on CAN, Orin; replay: the bag's
+                 radar; Gazebo: synthetic radar)
+  --init X,Y,YAW start pose in map (m, m, deg), sent automatically instead of the RViz 2D Pose Estimate
+                 (bag_record_3 on small_loop: --init -0.31,-0.27,0)
+  --tracker T    radar tracker: ekf (default, EKF tracker) | imm (sensor_fusion IMM)
+  --overlay      /fusion_visualization/overlay camera image (boxes, lane, path; drawn while watched)
+  --no-lane      --camera without lane segmentation / lane path
   --avoid        go around an obstacle that blocks the lane for >5 s (default ON in view/sim, OFF live/replay);
                  --no-avoid turns it off
   --params FILE  your own parameter YAML (only the keys you want to change); config/buggy_params.yaml holds all defaults
   --cpp          run the C++ runtime nodes (uart_writer, uart_bridge, wheel_odometry, lidar_preprocess, odom_to_twist, velodyne_static_tf, localization_manager, route_planner, avoidance_planner, segment_ground, self_hit_filter, lidar_obstacle_detector, operation_manager) from buggy_core
-  --camera       camera + object-detection model: obstacles get a class name instead of "unknown"
-                 (detector_model:=<onnx>  camera_device:=/dev/video0  can_interface:=can0
-                 labeler_debug:=true publishes /perception/labeler_debug/image)
+  --camera       camera detector (YOLOX 18 classes, + lane segmentation) fused with the radar; LiDAR obstacles get
+                 a class name instead of "unknown" (detector_model:=<engine|onnx>  lane_model:=<engine|onnx>
+                 camera_device:=/dev/video0  can_interface:=can0  radar_model:=umrra4|umrr9f  labeler_debug:=true)
   key:=value     passed to ros2 launch (voxel_size:=0.5 ndt_rate_hz:=5.0 feedback_port:=/dev/ttyUSB1
                  sender_port:=... corridor_half_width:=1.0 bag_start_delay:=12.0 ...)
 MAP is a folder name in data/maps (default new_delhi_map) or a full path.
 Data folder: \$BUGGY_DATA_DIR (default: $HERE/data)
 USAGE
 }
+
+can_up() { ip link show "$1" 2>/dev/null | grep -q "state UP\|,UP"; }   # SocketCAN interface up?
 
 need_build() {
   ros2 pkg prefix "$PKG" >/dev/null 2>&1 || { echo "Not built yet: run  ./buggy build"; exit 1; }
@@ -84,7 +99,11 @@ case "$cmd" in
   build)
     cd "$HERE" || exit 1
     [ "${1:-}" = "--clean" ] && rm -rf build install log
-    colcon build --symlink-install --base-paths src --cmake-args -DCMAKE_BUILD_TYPE=Release \
+    # the UMRR radar driver links the vendor's ARMv8 libraries: Orin only (a PC replays bags / Gazebo);
+    # kiss_icp needs sophus / tbb / robin-map, not installed on the PC
+    SKIP=()
+    [ "$(uname -m)" = aarch64 ] || SKIP=(--packages-skip umrr_ros2_driver kiss_icp)
+    colcon build --symlink-install --base-paths src "${SKIP[@]}" --cmake-args -DCMAKE_BUILD_TYPE=Release \
       && echo "built. Next: ./buggy doctor" ;;
 
   doctor)
@@ -100,11 +119,22 @@ case "$cmd" in
     for p in gazebo_ros gazebo_ros2_control ackermann_steering_controller xacro joint_state_broadcaster; do
       chk "$p" "ros2 pkg prefix $p" "sudo apt install ros-humble-$(echo "$p" | tr _ -)"
     done
-    echo "Optional: radar + camera names (--radar / --camera)"
-    chk "onnxruntime (YOLOX detector)" "python3 -c 'import onnxruntime'" "pip install onnxruntime"
+    echo "Optional: radar + camera, sensor_fusion (--radar / --camera)"
     chk "opencv python (cv2)" "python3 -c 'import cv2'" "sudo apt install python3-opencv"
-    chk "detector model data/models/yolox_s_ti_18class_ti_today_qat.onnx" "[ -f $BUGGY_DATA_DIR/models/yolox_s_ti_18class_ti_today_qat.onnx ]" "copy the .onnx there or pass detector_model:=<path>"
-    chk "radar driver + radar_fusion built" "ros2 pkg prefix radar_fusion && ros2 pkg prefix umrr_ros2_driver" "./buggy build"
+    chk "sensor_fusion built (fusion_bringup)" "ros2 pkg prefix fusion_bringup && ros2 pkg prefix sensor_fusion" "./buggy build"
+    if [ "$(uname -m)" = aarch64 ]; then
+      chk "radar driver built (umrr_ros2_driver)" "ros2 pkg prefix umrr_ros2_driver" "./buggy build"
+      chk "radar CAN can0 up (live --radar)" "can_up can0" "./buggy can"
+      for m in yolox_s_18class lane_seg_up; do
+        chk "TensorRT engine data/models/${m}_fp16|fp32.engine" \
+          "[ -f $BUGGY_DATA_DIR/models/${m}_fp16.engine ] || [ -f $BUGGY_DATA_DIR/models/${m}_fp32.engine ]" \
+          "data/models/README.md (trtexec)"
+      done
+    else
+      for m in yolox_s_18class.onnx lane_seg_up.onnx; do
+        chk "model data/models/$m" "[ -f $BUGGY_DATA_DIR/models/$m ]" "data/models/README.md"
+      done
+    fi
     echo "Python"
     for m in serial scipy numpy yaml; do chk "python3 $m" "python3 -c 'import $m'" "pip/apt: pyserial scipy numpy pyyaml"; done
     echo "This package"
@@ -134,6 +164,19 @@ case "$cmd" in
 
   add-map) python3 "$SCRIPTS/add_map.py" "$@" ;;
 
+  can)
+    # SocketCAN for the radar (umrr_ros2_driver; bitrate of param/radar.params.template.yaml).
+    # RESTART_MS: automatic restart after bus-off [ms], 0 = off
+    if [ "${1:-}" = --status ]; then ip -details -statistics link show "${2:-can0}"; exit; fi
+    IFACE="${1:-can0}" BITRATE="${2:-500000}"
+    ip link show "$IFACE" >/dev/null 2>&1 || {
+      echo "no CAN interface '$IFACE'. Available:"; ip -brief link show type can; exit 1; }
+    echo "$IFACE: bitrate $BITRATE restart-ms ${RESTART_MS:-100} (sudo)"
+    sudo ip link set "$IFACE" down
+    sudo ip link set "$IFACE" type can bitrate "$BITRATE" restart-ms "${RESTART_MS:-100}"
+    sudo ip link set "$IFACE" up
+    ip -details link show "$IFACE" | grep -E "state|bitrate" | sed 's/^ */  /' ;;
+
   view)
     need_build; fresh_graph; guard_graph
     MAP=""; ARGS=()
@@ -156,9 +199,10 @@ case "$cmd" in
     [ "$cmd" = replay ] && { BAG="${1:-}"; [ -n "$BAG" ] || { echo "usage: ./buggy replay BAG [MAP]"; exit 1; }; shift; }
     while [ $# -gt 0 ]; do
       case "$1" in
-        --drive) DRIVE=1 ;; --real) REAL=1 ;;
+        --drive) DRIVE=1 ;; --real) REAL=1 ;; --init) ARGS+=("initial_pose:=$2"); shift ;;
         --no-rviz) ARGS+=(rviz:=false) ;; --no-detector) ARGS+=(obstacle_detection:=false) ;;
         --radar) ARGS+=(radar:=true) ;; --camera) ARGS+=(camera:=true) ;;
+        --tracker) ARGS+=(radar_tracker:=$2); shift ;; --overlay) ARGS+=(overlay:=true) ;; --no-lane) ARGS+=(lane:=false) ;;
         --avoid) ARGS+=(avoidance:=true) ;; --no-avoid) ARGS+=(avoidance:=false) ;; --cpp) ARGS+=(core:=cpp) ;;
         --params) shift; [ -f "${1:-}" ] || { echo "--params needs an existing YAML file"; exit 1; }; ARGS+=("params:=$(realpath "$1")") ;;
         *:=*) ARGS+=("$1") ;;
@@ -178,6 +222,20 @@ case "$cmd" in
     fresh_graph; guard_graph
     if [ -z "$BAG" ]; then
       clean_hw
+      if printf '%s\n' "${ARGS[@]}" | grep -qx 'radar:=true'; then
+        CAN=$(printf '%s\n' "${ARGS[@]}" | sed -n 's/^can_interface:=//p')
+        # not given: radar_driver.can_interface of the parameter file(s) (default can0)
+        [ -n "$CAN" ] || CAN=$(python3 - "$(printf '%s\n' "${ARGS[@]}" | sed -n 's/^params:=//p')" "$HERE/config/buggy_params.yaml" <<'PY'
+import sys, yaml
+c = 'can0'
+for f in reversed(sys.argv[1:]):
+    try: c = (yaml.safe_load(open(f)) or {}).get('radar_driver', {}).get('ros__parameters', {}).get('can_interface') or c; break
+    except Exception: pass
+print(c)
+PY
+)
+        can_up "$CAN" || echo "WARNING: radar CAN $CAN is not up -> no radar objects. Run: ./buggy can $CAN"
+      fi
       python3 "$SCRIPTS/live_preflight.py" || { echo "Preflight reported problems. Continue anyway? [y/N]"; read -r a; [ "$a" = y ] || exit 1; }
     fi
     exec ros2 launch $PKG live.launch.py "${ARGS[@]}" ;;
@@ -187,7 +245,8 @@ case "$cmd" in
     MAP=""; ARGS=()
     while [ $# -gt 0 ]; do
       case "$1" in
-        --radar) ARGS+=(radar:=true) ;; --camera) ARGS+=(camera:=true) ;; --no-rviz) ARGS+=(rviz:=false) ;;
+        --radar) ARGS+=(radar:=true) ;; --camera) ARGS+=(camera:=true) ;; --no-rviz) ARGS+=(rviz:=false) ;; --init) ARGS+=("initial_pose:=$2"); shift ;;
+        --tracker) ARGS+=(radar_tracker:=$2); shift ;; --overlay) ARGS+=(overlay:=true) ;; --no-lane) ARGS+=(lane:=false) ;;
         --avoid) ARGS+=(avoidance:=true) ;; --no-avoid) ARGS+=(avoidance:=false) ;; --cpp) ARGS+=(core:=cpp) ;;
         --params) shift; [ -f "${1:-}" ] || { echo "--params needs an existing YAML file"; exit 1; }; ARGS+=("params:=$(realpath "$1")") ;;
         *:=*) ARGS+=("$1") ;;
@@ -234,6 +293,45 @@ case "$cmd" in
     echo "starting ECU feedback + UART writer ($( [ $LIVE = 1 ] && echo REAL || echo loopback )); log: $LOG"
     sleep 6
     ros2 run $PKG brake_calibration "${PASS[@]}" ;;
+
+  kill)
+    # EVERY ROS process of this user (not only ./buggy launches): ros2 CLI, --ros-args nodes, binaries from
+    # /opt/ros or this workspace, Gazebo, RViz. ECU writers first with Ctrl+C (final STOP frame), then the
+    # rest with Ctrl+C (bags get closed), SIGKILL after 5 s; then ros2 daemon + stale Fast DDS shared memory.
+    PATTERN="(/opt/ros/|$HERE/install/|$HERE/build/|ros2 (launch|run|bag|topic|service|param|node)|--ros-args|gzserver|gzclient|rviz2)"
+    SELF=" $$ "; p=$PPID   # this script and the terminal that started it are never stopped
+    while [ "$p" -gt 1 ]; do SELF="$SELF$p "; p=$(ps -o ppid= -p "$p" 2>/dev/null | tr -d ' '); [ -n "$p" ] || p=1; done
+    ros_pids() { pgrep -u "$(id -u)" -f -- "$PATTERN" | while read -r pid; do
+      case "$SELF" in *" $pid "*) ;; *) [ -d "/proc/$pid" ] && echo "$pid" ;; esac; done; }
+    if [ "${1:-}" = --list ]; then
+      PIDS=$(ros_pids | paste -sd,)
+      [ -n "$PIDS" ] && ps -o pid=,args= -p "$PIDS" | cut -c1-150 || echo "no ROS processes running"
+      exit 0
+    fi
+    N=$(ros_pids | wc -l)
+    if [ "$N" -gt 0 ]; then
+      echo "stopping $N ROS processes"
+      UART='[u]art_writer|[u]art_sender_node'
+      pkill -INT -u "$(id -u)" -f "$UART" 2>/dev/null
+      for _ in $(seq 20); do pgrep -u "$(id -u)" -f "$UART" >/dev/null || break; sleep 0.1; done
+      for pid in $(ros_pids); do kill -INT "$pid" 2>/dev/null; done
+      for _ in $(seq 50); do [ -z "$(ros_pids)" ] && break; sleep 0.1; done
+      LEFT=$(ros_pids)
+      if [ -n "$LEFT" ]; then
+        echo "$(echo "$LEFT" | wc -l) still running after 5 s, killing"
+        kill -KILL $LEFT 2>/dev/null; sleep 0.5
+      fi
+    else
+      echo "no ROS processes running"
+    fi
+    ros2 daemon stop >/dev/null 2>&1 || true
+    if [ -z "$(ros_pids)" ]; then
+      find /dev/shm -maxdepth 1 -user "$(id -u)" \( -name 'fastrtps_*' -o -name 'sem.fastrtps_*' -o -name 'fast_datasharing*' \) \
+        -delete 2>/dev/null
+      echo "all ROS processes stopped, ready for a fresh start"
+    else
+      echo "some processes survived:"; ps -o pid=,args= -p "$(ros_pids | paste -sd,)" | cut -c1-150; exit 1
+    fi ;;
 
   stop)
     # only launches of THIS ROS domain: another terminal's run (other ROS_DOMAIN_ID) is left alone

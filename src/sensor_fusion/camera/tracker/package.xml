@@ -1,0 +1,11 @@
+<?xml version="1.0"?>
+<package format="3">
+  <name>byte_tracker</name>
+  <version>0.1.0</version>
+  <description>ByteTrack 2D box tracker (no ROS): detector boxes -> 2D tracks, the camera input of the fusion.</description>
+  <maintainer email="gowtham2351995@gmail.com">gowtham</maintainer>
+  <license>Proprietary</license>
+  <buildtool_depend>cmake</buildtool_depend>
+  <depend>fusion_common</depend>
+  <export><build_type>cmake</build_type></export>
+</package>

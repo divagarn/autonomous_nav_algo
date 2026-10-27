@@ -1,0 +1,11 @@
+<?xml version="1.0"?>
+<package format="3">
+  <name>lane_estimation</name>
+  <version>0.1.0</version>
+  <description>Lane / road boundaries on the ground from the camera segmentation mask (no ROS): road edges and lane markings, flat-ground projection, robust polynomial per boundary.</description>
+  <maintainer email="gowtham2351995@gmail.com">gowtham</maintainer>
+  <license>Proprietary</license>
+  <buildtool_depend>cmake</buildtool_depend>
+  <depend>fusion_common</depend>
+  <export><build_type>cmake</build_type></export>
+</package>

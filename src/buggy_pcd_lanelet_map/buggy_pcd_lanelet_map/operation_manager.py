@@ -130,9 +130,13 @@ class OperationManager(Node):
         # true = with --avoid stop far enough before the obstacle for a detour (avoid_stop_margin, planner
         # probe); false (default) = stop at the normal stop_margin and never move the stop line back
         self.avoid_stop_early = self.declare_parameter('avoid_stop_early', False).value
-        # with avoid_stop_early: true = the planner is probed and the stop line follows its answer (wide obstacles
-        # stop further away); false = the stop line is exactly avoid_stop_margin
+        # with avoid_stop_early the stop line is ALWAYS avoid_stop_margin. avoid_probe: true = while approaching, ask
+        # the planner how much room a detour needs, show it (state key detour_room) and warn when the stop line is
+        # closer than that; false = no probing. avoid_stop_follow_planner: true = that answer also moves the stop
+        # line back (wide obstacles stop further away, up to 20 m); default false = the stop line stays as configured
         self.avoid_probe = self.declare_parameter('avoid_probe', True).value
+        self.avoid_stop_follow_planner = self.declare_parameter('avoid_stop_follow_planner', False).value
+        self.room_warned, self.last_obs_time = False, 0.0
         self.stop_speed = 0.15      # m/s below which the vehicle counts as stopped
         self.orig_path, self.orig_seg, self.avoid_req_idx, self.avoid_ib = None, None, 0, 0
         self.avoid_blockers, self.avoid_pending_blockers, self.gone_since = [], [], None
@@ -424,7 +428,18 @@ class OperationManager(Node):
             self.msg = ''
         fresh = self.room_needed is not None and now - self.room_time < 6.0
         self.stop_margin = (max(self.stop_margin_base, min(20.0, self.room_needed + 0.5))
-                            if (fresh and obs is not None and self.avoid_stop_early and self.avoid_probe) else self.stop_margin_base)
+                            if (fresh and obs is not None and self.avoid_stop_early and self.avoid_probe
+                                and self.avoid_stop_follow_planner) else self.stop_margin_base)
+        if obs is not None:
+            self.last_obs_time = now
+            if (fresh and self.avoid_stop_early and self.avoid_probe and not self.room_warned
+                    and self.room_needed > self.stop_margin + 0.5):
+                self.room_warned = True
+                self.get_logger().warn(
+                    f'the stop line ({self.stop_margin:.1f} m before the obstacle) is closer than the room the '
+                    f'planner estimates a detour needs ({self.room_needed:.1f} m): the detour may be refused')
+        elif now - self.last_obs_time > 3.0:
+            self.room_warned = False
         if (self.avoid_stop_early and self.avoid_probe and not self.avoiding and obs is not None and not stopped and self.avoid_pending is None
                 and now >= self.probe_next and (self.probe_pending is None or now - self.probe_pending[1] > 4.0)):
             self.probe_next = now + 1.5
@@ -471,9 +486,9 @@ class OperationManager(Node):
         op, oseg = self.orig_path, self.orig_seg
         lo, hi = self.avoid_req_idx, min(len(op), self.avoid_req_idx + self.avoid_ib + 60)
         j = min(range(lo, hi), key=lambda i: math.hypot(op[i][0] - self.rx, op[i][1] - self.ry))
-        sblock = min(oseg[min(range(len(op)), key=lambda i: math.hypot(op[i][0] - b[0], op[i][1] - b[1]))]
-                     for b in self.avoid_blockers)
-        before = oseg[j] + self.front_offset + 1.0 < sblock - 1.5
+        sblock = min(oseg[min(range(len(op)), key=lambda i: math.hypot(op[i][0] - b[0], op[i][1] - b[1]))] - b[2]
+                     for b in self.avoid_blockers)                 # the near edge of the nearest blocker
+        before = oseg[j] + self.front_offset + 0.5 < sblock
         if present or not sensors_alive or not before:
             self.gone_since = None
             return
@@ -540,7 +555,7 @@ class OperationManager(Node):
             self.avoid_pub.publish(String(data=json.dumps(
                 {'id': self.avoid_id, 'points': pts, 'obstacles': obstacles, 'probe': True})))
             return
-        self.avoid_pending_blockers = [(o[0], o[1]) for o in obstacles]
+        self.avoid_pending_blockers = [(o[0], o[1], 0.5 * max(o[3], o[4])) for o in obstacles]   # x, y, half extent
         self.avoid_pending = (self.avoid_id, now, self.idx)
         self.avoid_status = 'planning'
         self.avoid_pub.publish(String(data=json.dumps(
@@ -1013,6 +1028,7 @@ class OperationManager(Node):
             'objects': str(len(self.all_objects())),
             'avoid': ('off' if not self.avoid_enabled else self.avoid_status),
             'obs_gap': f'{self.last_gap:.1f}' if self.last_gap is not None else '-',
+            'detour_room': (f'{self.room_needed:.1f}' if (self.room_needed is not None and self.mono() - self.room_time < 6.0) else '-'),
             'stop_below': f'{self.stop_margin + self.stopping_distance(max(self.v, 0.55)):.1f}',
             'sensors': self.sensors_text(),
             'stop_model': (f'react {self.react:.1f}s decel {self.decel:.2f} '

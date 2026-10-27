@@ -1,0 +1,36 @@
+<!--
+  PC preprocessing, once per bag: rectify every camera frame of the bag, run YOLO
+  with ONNX Runtime on the CPU and save the boxes to <bag>_detections_<model>.json, and
+  (lane_model_path set) the lane / road masks of every 3rd frame to <bag>_lane_seg_up/.
+  The pipeline (platform:=pc) then replays them in sync with the bag.
+
+    ros2 launch fusion_bringup precompute_detections.launch.xml \
+        bag:=$PWD/../bag_record_3_intersept_v1 model_path:=$PWD/models/yolox_s_18class.onnx \
+        lane_model_path:=$PWD/models/lane_seg_up.onnx
+  (pass the bag directory without a trailing slash)
+-->
+<launch>
+  <arg name="bag" description="rosbag2 directory"/>
+  <arg name="model_path" description="YOLOX / YOLOv8 .onnx"/>
+  <arg name="model_type" default="yolox" description="yolox | yolov8"/>
+  <arg name="out" default="$(var bag)_detections_yolox_s_18class.json"/>
+  <arg name="lane_model_path" default="" description="lane segmentation .onnx (empty: no masks)"/>
+  <arg name="lane_out" default="$(var bag)_lane_seg_up"/>
+  <arg name="lane_every" default="3" description="mask of every n-th frame (3: 10 Hz at 30 fps, as lane.rate)"/>
+  <arg name="vehicle" default="buggy" description="calibration folder in fusion_vehicles (vehicles/&lt;vehicle&gt;/)"/>
+  <arg name="intrinsics_file" default="$(find-pkg-share fusion_vehicles)/$(var vehicle)/front_intrinsics.yaml"/>
+  <arg name="rectify_balance" default="0.0"/>
+  <arg name="rectify_fov_scale" default="1.0"/>
+  <arg name="image_topic" default="/camera/image_raw"/>
+  <arg name="conf" default="0.15" description="low: the fusion's ByteTrack also uses low-score boxes"/>
+
+  <executable cmd="ros2 run object_detection bag_to_detections_json --bag $(var bag) --model $(var model_path)
+                   --intrinsics $(var intrinsics_file) --balance $(var rectify_balance) --fov_scale $(var rectify_fov_scale)
+                   --topic $(var image_topic) --conf $(var conf) --out $(var out) --model-type $(var model_type)"
+              output="screen" unless="$(eval '&quot;$(var lane_model_path)&quot; != &quot;&quot;')"/>
+  <executable cmd="ros2 run object_detection bag_to_detections_json --bag $(var bag) --model $(var model_path)
+                   --intrinsics $(var intrinsics_file) --balance $(var rectify_balance) --fov_scale $(var rectify_fov_scale)
+                   --topic $(var image_topic) --conf $(var conf) --out $(var out) --model-type $(var model_type)
+                   --lane-model $(var lane_model_path) --lane-out $(var lane_out) --lane-every $(var lane_every)"
+              output="screen" if="$(eval '&quot;$(var lane_model_path)&quot; != &quot;&quot;')"/>
+</launch>

@@ -59,9 +59,11 @@ def launch_setup(context):
             raise RuntimeError(f'map file missing: {f}')
     has_metadata = os.path.exists(metadata)
 
+    # own loaders (buggy_core: same topics / services / parameters); autoware_map_loaders:=true = the Autoware ones
+    own = LaunchConfiguration('autoware_map_loaders').perform(context).lower() != 'true'
     projection_loader = Node(
-        package='autoware_map_projection_loader',
-        executable='autoware_map_projection_loader_node',
+        package='buggy_core' if own else 'autoware_map_projection_loader',
+        executable='map_projection_loader' if own else 'autoware_map_projection_loader_node',
         name='map_projection_loader',
         output='screen',
         parameters=[{'map_projector_info_path': projector, 'lanelet2_map_path': osm}],
@@ -92,8 +94,8 @@ def launch_setup(context):
         'pcd_metadata_path': metadata,
     }
     pcd_loader = Node(
-        package='autoware_map_loader',
-        executable='autoware_pointcloud_map_loader',
+        package='buggy_core' if own else 'autoware_map_loader',
+        executable='pointcloud_map_loader' if own else 'autoware_pointcloud_map_loader',
         name='pointcloud_map_loader',
         output='screen',
         parameters=[pcd_loader_params],
@@ -249,6 +251,8 @@ def generate_launch_description():
             description='Map NAME (folder under <data>/maps) or full path of a folder with '
                         'pointcloud_map.pcd, lanelet2_map.osm, map_projector_info.yaml'),
         DeclareLaunchArgument('rviz', default_value='true'),
+        DeclareLaunchArgument('autoware_map_loaders', default_value='false',
+                              description='true = use Autoware\'s map_projection_loader / pointcloud_map_loader instead of buggy_core\'s'),
         DeclareLaunchArgument('core', default_value='python', description='python | cpp (live only)'),
         DeclareLaunchArgument('live', default_value='false',
                               description='true: pose from NDT localization (no click TF/sim)'),

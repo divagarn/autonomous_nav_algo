@@ -181,6 +181,14 @@ the Python versions stay as the reference and fallback. Select with `--cpp` (or 
 | `localization_manager` (click -> NDT align -> seed EKF, state, TF-conflict and pose-jump watchdog) | done | `buggy_pcd_lanelet_map` |
 | `lidar_preprocess` (NDT input: crop + voxel downsample), `odom_to_twist`, `velodyne_static_tf` | done | `buggy_pcd_lanelet_map`, `buggy_perception` |
 
+**Map loaders (own, `buggy_core/mapping`):** `map_projection_loader` (publishes `map_projector_info.yaml` on `/map/map_projector_info`)
+and `pointcloud_map_loader` (publishes the PCD on `/map/pointcloud_map` and serves the partial / differential map services that
+`ndt_scan_matcher` uses) replace `autoware_map_projection_loader` and `autoware_map_loader/pointcloud_map_loader`; same topics, services and
+parameters, so nothing else changed. Checked against the Autoware nodes on `small_loop`: the 2,945,602-point cloud is identical point for point
+(same message layout), the projector message is the same, and a bag replay with the new loaders gives `initialized` then `converged` (NDT score 3.1).
+`autoware_map_loaders:=true` switches back to the Autoware ones. Not implemented: downsampled-whole and selected loading (unused). Still Autoware:
+`lanelet2_map_loader`, `ndt_scan_matcher`, `ekf_localizer`.
+
 **The whole real-buggy runtime path is now C++** (`./buggy live --cpp`): 11 nodes of `buggy_core` plus the Autoware C++ nodes
 (NDT, EKF, map loaders) and the Velodyne driver. What stays Python on purpose: the RViz-only simulated vehicle (`view`),
 tools and calibration, the simulation helpers, map-display helpers (`lanelet_marker_publisher`, `map_display_cloud`,
@@ -259,17 +267,19 @@ appeared (`ros2 bag record /velodyne_points /wheel_uart /tf /tf_static`) to tune
 
 **How it runs (stop first, then replan):**
 1. The buggy slows down and **stops** in front of the obstacle as usual, at `stop_margin` (2.5 m) from the bumper.
-   *Optional, off by default:* `avoid_stop_early: true` (in `config/buggy_params.yaml`, section `operation_manager`) keeps the stop line at least
-   `avoid_stop_margin` (7.5 m) before the obstacle, and further back when the planner says a wide obstacle needs more room:
-   while the obstacle is still ahead `operation_manager` sends the planner a *probe* every 1.5 s and the answer
-   (`room_needed`) moves the stop line back (a pedestrian needs ~7 m, a 10 m barrier ~12 m). Why: the buggy only drives
-   forward (no reverse) and turns no tighter than ~4.4 m radius, so a detour planned from a standstill needs that room.
-   **To choose the stop distance yourself:** `avoid_stop_early: true`, `avoid_probe: false`, `avoid_stop_margin: <metres>`
-   (the buggy then stops that far before every obstacle; measured on `small_loop` with a pedestrian: a 2 m stop found no detour,
-   a 3.5 m stop (`avoid_stop_margin: 4.0`) did). The planner itself does not need 7 m: on a straight lane it found detours from a
-   2.5 to 4 m gap (peak steering 15 deg). What it needs is *room beside the lane* (the front corners swing wide during the arc;
-   without LiDAR only `offlane_allow_m` = 0.8 m outside the lane counts, set 3.0 in `avoidance_planner` for `view`) and *no tight bend*
-   right there (an offset towards the inside of a bend pushes the steering past the limit).
+   *Optional, off by default:* `avoid_stop_early: true` (in `config/buggy_params.yaml`, section `operation_manager`) makes the
+   buggy stop **exactly `avoid_stop_margin` metres** (bumper to the obstacle's near edge) before an obstacle, so a detour has room.
+   You choose the distance; the planner never overrides it. Why a distance is needed at all: the buggy only drives forward (no
+   reverse) and turns no tighter than ~4.4 m radius. Measured: on a straight lane with space beside it a detour was found from a
+   2.5 to 4 m gap; on `small_loop` (a bend) a 2 m stop found none and a 3.5 m stop (`avoid_stop_margin: 4.0`) worked.
+   * `avoid_probe: true` (default): while approaching, the planner is asked how much room it thinks a detour needs. The answer is
+     shown as `detour_room` in `/system/state` and, if your stop line is closer, one warning is logged ("the detour may be
+     refused"). The estimate is conservative: the detour in the example above worked although it said 6.6 m. `false` = no probing.
+   * `avoid_stop_follow_planner: true` (default `false`): additionally move the stop line back to that estimate + 0.5 m (up to
+     20 m), so a wide obstacle stops further away. Off, the stop line is always exactly `avoid_stop_margin`.
+   The planner itself does not need 7 m. What it needs is *room beside the lane* (the front corners swing wide during the arc; without
+   LiDAR only `offlane_allow_m` = 0.8 m outside the lane counts, set 3.0 in `avoidance_planner` for `view`) and *no tight bend* right
+   there (an offset towards the inside of a bend pushes the steering past the limit).
    With the default (off) a detour from 2-3 m in front of the obstacle mostly fails ("needs more steering" / "needs ~7 m
    before the obstacle") and the buggy simply stays stopped.
 2. The panel message counts it down (`... | replanning in 3 s`). Only after the vehicle has **stood still for 5 s** (`avoid_after_sec`) the

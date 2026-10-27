@@ -27,6 +27,10 @@ find_package(autoware_internal_debug_msgs REQUIRED)
 find_package(autoware_internal_localization_msgs REQUIRED)
 find_package(nlohmann_json REQUIRED)
 find_package(PkgConfig REQUIRED)
+find_package(yaml-cpp REQUIRED)
+find_package(PCL REQUIRED COMPONENTS common io)
+find_package(pcl_conversions REQUIRED)
+find_package(autoware_map_msgs REQUIRED)
 pkg_check_modules(TINYXML2 REQUIRED tinyxml2)
 
 # ---- pure C++ library (no ROS): easy to unit-test --------------------------------------------
@@ -41,6 +45,7 @@ add_library(buggy_core_lib SHARED
   src/perception/detector_core.cpp
   src/control/operation_core.cpp
   src/planning/path_utils.cpp
+  src/mapping/pcd_cells.cpp
   src/planning/lanelet_map.cpp
   src/planning/route_core.cpp
   src/planning/avoidance.cpp
@@ -101,6 +106,15 @@ ament_target_dependencies(odom_to_twist rclcpp nav_msgs geometry_msgs)
 add_executable(velodyne_static_tf src/localization/velodyne_static_tf_node.cpp)
 ament_target_dependencies(velodyne_static_tf rclcpp geometry_msgs tf2_ros)
 
+add_executable(map_projection_loader src/mapping/map_projection_loader_node.cpp)
+ament_target_dependencies(map_projection_loader rclcpp autoware_map_msgs)
+target_link_libraries(map_projection_loader yaml-cpp)
+
+add_executable(pointcloud_map_loader src/mapping/pointcloud_map_loader_node.cpp)
+target_link_libraries(pointcloud_map_loader buggy_core_lib yaml-cpp ${PCL_LIBRARIES})
+target_include_directories(pointcloud_map_loader PRIVATE ${PCL_INCLUDE_DIRS})
+ament_target_dependencies(pointcloud_map_loader rclcpp sensor_msgs pcl_conversions autoware_map_msgs)
+
 add_executable(operation_manager src/control/operation_manager_node.cpp)
 target_link_libraries(operation_manager buggy_core_lib)
 ament_target_dependencies(operation_manager rclcpp std_msgs nav_msgs geometry_msgs visualization_msgs
@@ -110,6 +124,7 @@ install(TARGETS buggy_core_lib
   ARCHIVE DESTINATION lib LIBRARY DESTINATION lib RUNTIME DESTINATION bin)
 install(TARGETS uart_writer lidar_obstacle_detector operation_manager
   segment_ground self_hit_filter wheel_odometry route_planner avoidance_planner
+  map_projection_loader pointcloud_map_loader
   localization_manager uart_bridge lidar_preprocess odom_to_twist velodyne_static_tf DESTINATION lib/${PROJECT_NAME})
 install(DIRECTORY include/ DESTINATION include)
 
@@ -158,6 +173,8 @@ if(BUILD_TESTING)
   target_link_libraries(test_detector_core buggy_core_lib)
   target_compile_definitions(test_detector_core PRIVATE
     GOLDEN_DIR="${CMAKE_CURRENT_SOURCE_DIR}/test/perception")
+  ament_add_gtest(test_pcd_cells test/mapping/test_pcd_cells.cpp)
+  target_link_libraries(test_pcd_cells buggy_core_lib)
   ament_add_gtest(test_operation_core test/control/test_operation_core.cpp)
   target_link_libraries(test_operation_core buggy_core_lib)
   target_compile_definitions(test_operation_core PRIVATE

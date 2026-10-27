@@ -1,0 +1,11 @@
+<?xml version="1.0"?>
+<package format="3">
+  <name>imm_tracker</name>
+  <version>0.1.0</version>
+  <description>IMM radar tracker (no ROS): clustering + IMM (stationary / CV / CT) with the EKF tracker gating, mirror and ground mechanisms. radar.tracker imm.</description>
+  <maintainer email="gowtham2351995@gmail.com">gowtham</maintainer>
+  <license>Proprietary</license>
+  <buildtool_depend>cmake</buildtool_depend>
+  <depend>fusion_common</depend>
+  <export><build_type>cmake</build_type></export>
+</package>

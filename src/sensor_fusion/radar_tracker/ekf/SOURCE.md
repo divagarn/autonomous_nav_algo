@@ -1,0 +1,39 @@
+# EKF tracker: source of the copy
+
+`aeb/` is a byte-identical copy of the AEB radar pipeline of the TDA4 application:
+
+    ti-processor-sdk-rtos-j784s4-evm-11_00_00_06/vision_apps/apps/dl_demos/app_radarsocket_pipeline/
+
+Same relative paths as there. **Do not edit these files**: changes go into the TDA4 app first,
+then are copied here again. The only addition is `src/ekf_aeb_bridge.cpp`, which compiles
+`aeb/aeb_wrapper.cpp` through `#include` (same translation unit) to read the last tracks of
+`aeb_process_frame_mois()`.
+
+On TDA4 this package is not compiled: the app builds the original files itself.
+
+Check the copy against the app (prints nothing when identical):
+
+    cd radar_tracker/ekf/aeb && sha256sum -c --quiet ../SOURCE.sha256
+
+sha256 of the copied files (2026-10-21):
+
+```
+f55677f786f500a199ac5d058ff4ab01eaa03a2f368a4dcd667b1a9c8cadc768  ./aeb_wrapper.cpp
+02d335ba37fb2640f0fd74e7998a559b7de5e3db672647e692f0a5edd65c4a07  ./docs/aeb_top5.md
+66c4495447dbf0ef2bd5fd54b187860afa1ebfbf27f4c086d4fc88b58cdc7a5f  ./docs/AEB_TOP5_SELECTION_ALGORITHM.md
+25516d4eb2b7827275006910bec7090e9221a3783eb97b20bd2606298af6217e  ./include/aeb_top5.h
+2c02f4a472e0c7266f437a57a3b84f355d6cf2fd190f025a46211cdd2c431c87  ./include/datatype/radar_point.hpp
+615b31f002b7a952bcb22dba378070ed5523091842c161bee42cf02a0deeeebe  ./include/radar.h
+921230d507ad897c3bfab69eaf914ddc28151b490a82617c015f2b15bb95b340  ./include/radarprocessing/ekf_tracker.hpp
+b31df92f03bf47e802f19c3772b492a84d649fb5f67a0ccf39fc780074e88d46  ./include/radarprocessing/gating_module.hpp
+be39628acbeec2919fe692d695894243353a2c7333c8165fa100c79bda226aaa  ./include/radarprocessing/mio_selector.hpp
+28671812b0dc03289a030feacdc393d2629878d138f312ea3eaac9aaa263ce26  ./include/radarprocessing/mirror_detector.hpp
+4716506ae5b7cb611409246174ce8ca00e20675ab7a590045434fcccb1ad3978  ./include/radarprocessing/radar_clusterer.hpp
+172a8992f2893aa6a19df79e4466c83ac151fbb8c83730ed1e06b38616ad1b70  ./include/radarprocessing/tracker_config.hpp
+28877651b847f76050a7dd02dbf8dbc29612b105ccf245bb22d3ba39895cb417  ./include/radarprocessing/utils.hpp
+d349017cabf848f9f37d4fc1abad9240671236a9b389422a301314750eb458bd  ./radarprocessing/ekf_tracker.cpp
+c70a01a3bcc772274d4e13a2a41833efcf8e3e1c0d8d05df6d924383ebe38842  ./radarprocessing/gating_module.cpp
+81bfa9c70a592f3e1e412421b93a4f7542824a1fa4a50945f5ab1bc7c2abbc36  ./radarprocessing/mio_selector.cpp
+7cc3acd09a1d0dafe57b8143f77ce5be4bc14197e580c123f5fa1d05b05f0297  ./radarprocessing/mirror_detector.cpp
+6cba456e37f72117b49cbe31b11175886001e15719f83371d250e9030665a3bb  ./radarprocessing/radar_clusterer.cpp
+```

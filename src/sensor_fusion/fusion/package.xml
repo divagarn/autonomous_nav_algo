@@ -1,0 +1,11 @@
+<?xml version="1.0"?>
+<package format="3">
+  <name>sensor_fusion_core</name>
+  <version>0.1.0</version>
+  <description>Radar-led radar/camera fusion (no ROS): radar tracks of any tracker + 2D box tracks -> fused object list, ego path, stop zone.</description>
+  <maintainer email="gowtham2351995@gmail.com">gowtham</maintainer>
+  <license>Proprietary</license>
+  <buildtool_depend>cmake</buildtool_depend>
+  <depend>fusion_common</depend>
+  <export><build_type>cmake</build_type></export>
+</package>

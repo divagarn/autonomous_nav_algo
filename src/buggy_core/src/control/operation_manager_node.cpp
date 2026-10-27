@@ -69,6 +69,7 @@ public:
     p.avoid_stop_margin = declare_parameter<double>("avoid_stop_margin", 7.5);
     p.avoid_stop_early = declare_parameter<bool>("avoid_stop_early", false);
     p.avoid_probe = declare_parameter<bool>("avoid_probe", true);
+    p.avoid_stop_follow_planner = declare_parameter<bool>("avoid_stop_follow_planner", false);
     p.avoid_max_tries = static_cast<int>(declare_parameter<int>("avoid_max_tries", 6));
     p.memory_sec = declare_parameter<double>("obstacle_memory_sec", 4.0);
     p.memory_max_sec = declare_parameter<double>("obstacle_memory_max_sec", 25.0);

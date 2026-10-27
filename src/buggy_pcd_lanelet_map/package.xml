@@ -39,8 +39,9 @@
   <exec_depend>buggy_core</exec_depend>
   <exec_depend>perception_msgs</exec_depend>
   <exec_depend>umrr_ros2_msgs</exec_depend>
-  <exec_depend>radar_fusion</exec_depend>
-  <exec_depend>umrr_ros2_driver</exec_depend>
+  <!-- radar / camera (radar:=true, camera:=true): our sensor fusion (src/sensor_fusion) -->
+  <exec_depend>fusion_bringup</exec_depend>
+  <!-- umrr_ros2_driver (radar:=true on the buggy) is not a dependency: it is built on the Orin only -->
   <exec_depend>camera_processing</exec_depend>
   <exec_depend>rviz2</exec_depend>
   <exec_depend>buggy_rviz_plugins</exec_depend>

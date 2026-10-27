@@ -1,0 +1,18 @@
+<?xml version="1.0"?>
+<package format="3">
+  <name>fusion_bringup</name>
+  <version>0.1.0</version>
+  <description>Launch files and RViz config for the camera-radar fusion pipeline (PC and Jetson Orin). Configuration and calibration: fusion_vehicles.</description>
+  <maintainer email="gowtham2351995@gmail.com">gowtham</maintainer>
+  <license>Proprietary</license>
+  <buildtool_depend>ament_cmake</buildtool_depend>
+  <exec_depend>fusion_vehicles</exec_depend>
+  <exec_depend>object_detection</exec_depend>
+  <exec_depend>sensor_fusion</exec_depend>
+  <exec_depend>radar_tracker</exec_depend>
+  <exec_depend>fusion_visualization</exec_depend>
+  <exec_depend>rviz2</exec_depend>
+  <exec_depend>ros2bag</exec_depend>
+  <exec_depend>tf2_ros</exec_depend>
+  <export><build_type>ament_cmake</build_type></export>
+</package>

@@ -1,0 +1,10 @@
+<?xml version="1.0"?>
+<package format="3">
+  <name>fusion_vehicles</name>
+  <version>0.1.0</version>
+  <description>Fusion configuration: common/ (sensor_fusion.yaml, radar_tracker.yaml, shared by all vehicles) and one folder per vehicle with its calibration (camera intrinsics, radar-camera extrinsics).</description>
+  <maintainer email="gowtham2351995@gmail.com">gowtham</maintainer>
+  <license>Proprietary</license>
+  <buildtool_depend>ament_cmake</buildtool_depend>
+  <export><build_type>ament_cmake</build_type></export>
+</package>

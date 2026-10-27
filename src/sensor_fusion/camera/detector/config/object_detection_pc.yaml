@@ -1,0 +1,33 @@
+object_detection:
+  ros__parameters:
+    platform: pc
+    image_topic: /camera/image_raw     # raw fisheye image
+    image_qos: reliable                # reliable | best_effort (only if the camera driver is best-effort)
+    display_rate: 10.0                 # Hz of ~/image_rect for RViz (best-effort, never blocks detection)
+    rectify:                           # lens distortion correction before detection
+      enabled: true
+      intrinsics_file: ""              # set by launch (calibration app output)
+      balance: 0.0                     # must match sensor_fusion / fusion_visualization
+      fov_scale: 1.0
+    detector:
+      backend: auto              # pc -> json_replay (run precompute_detections.launch.xml once per bag). Alternatives: onnxruntime | opencv_dnn
+      json_file: ""                    # set by launch (<bag>_detections.json)
+      json_max_time_diff: 0.02         # s
+      model_path: ""                   # set by launch
+      model_type: yolox                # yolox (models/yolox_s_18class, 18 classes) | yolov8 (COCO)
+      input_size: 640
+      conf_threshold: 0.15             # low: the fusion's ByteTrack uses low-score boxes too
+      nms_threshold: 0.5
+      use_gpu: false
+      # published classes. yolox (traffic light / sign left out):
+      classes: [animal, autorickshaw, barricade, bicycle, bicyclist, bus, car, debris, motorcycle,
+                motorcyclist, partial pedestrian, pedestrian, pothole, road damage, truck, vehicle fallback]
+      classes_yolov8: [person, bicycle, car, motorcycle, bus, truck, dog, cat]   # COCO labels
+    lane:                              # lane / road segmentation (models/lane_seg_up) -> ~/lane_mask
+      enabled: true
+      backend: auto                    # pc -> replay (precomputed <bag>_lane/ masks). Alternative: onnxruntime (slow on CPU)
+      model_path: ""                   # set by launch
+      replay_dir: ""                   # set by launch (<bag>_lane)
+      replay_max_time_diff: 0.02       # s
+      rate: 10.0                       # Hz (every 3rd frame at 30 fps)
+      use_gpu: false

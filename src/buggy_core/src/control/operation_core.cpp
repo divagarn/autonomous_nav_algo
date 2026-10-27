@@ -271,7 +271,18 @@ void OperationCore::update_avoidance(const std::optional<Obstacle> & obs, double
   last_now_ = now;
   if (starts_with(msg_, "Route restored") && now > restored_until_) {msg_.clear();}
   const bool fresh = room_needed_ && now - room_time_ < 6.0;
-  p_.stop_margin = (fresh && obs && p_.avoid_stop_early && p_.avoid_probe) ? std::max(stop_margin_base_, std::min(20.0, *room_needed_ + 0.5)) : stop_margin_base_;
+  p_.stop_margin = (fresh && obs && p_.avoid_stop_early && p_.avoid_probe && p_.avoid_stop_follow_planner) ?
+    std::max(stop_margin_base_, std::min(20.0, *room_needed_ + 0.5)) : stop_margin_base_;
+  if (obs) {
+    last_obs_time_ = now;
+    if (fresh && p_.avoid_stop_early && p_.avoid_probe && !room_warned_ && *room_needed_ > p_.stop_margin + 0.5) {
+      room_warned_ = true;
+      log(Level::Warn, fmt("the stop line (%.1f m before the obstacle) is closer than the room the planner estimates a "
+        "detour needs (%.1f m): the detour may be refused", p_.stop_margin, *room_needed_));
+    }
+  } else if (now - last_obs_time_ > 3.0) {
+    room_warned_ = false;
+  }
   if (p_.avoid_stop_early && p_.avoid_probe && !avoiding_ && obs && !stopped && !avoid_pending_ && now >= probe_next_ &&
     (!probe_pending_ || now - probe_pending_->second > 4.0))
   {
@@ -345,10 +356,10 @@ void OperationCore::check_obstacle_gone(double now)
       const double d = std::hypot(op[i].x - b[0], op[i].y - b[1]);
       if (d < bd) {bd = d; kk = i;}
     }
-    sblock = std::min(sblock, orig_seg_[kk]);
+    sblock = std::min(sblock, orig_seg_[kk] - b[2]);       // the near edge of the blocker
   }
-  // only while the vehicle is still before the obstacle (beside / past it the detector no longer sees it)
-  const bool before = orig_seg_[j] + p_.front_offset + 1.0 < sblock - 1.5;
+  // only while the vehicle's front is still before the obstacle (beside / past it the detector no longer sees it)
+  const bool before = orig_seg_[j] + p_.front_offset + 0.5 < sblock;
   if (present || !sensors_alive || !before) {gone_since_.reset(); return;}
   if (!gone_since_) {gone_since_ = now;}
   if (now - *gone_since_ >= p_.avoid_clear_sec) {revert_to_original();}
@@ -438,7 +449,7 @@ void OperationCore::request_avoidance(double now, bool probe)
     return;
   }
   pending_blockers_.clear();
-  for (const auto & o : objs) {pending_blockers_.push_back({o.x, o.y});}
+  for (const auto & o : objs) {pending_blockers_.push_back({o.x, o.y, 0.5 * std::max(o.length, o.width)});}
   avoid_pending_ = Pending{avoid_id_, now, idx_};
   avoid_status_ = "planning";
   nlohmann::json req = {{"id", avoid_id_}, {"points", pts}, {"obstacles", obstacles}};
@@ -737,6 +748,7 @@ std::string OperationCore::state_string(double now) const
     {"objects", std::to_string(all_objects(now).size())},
     {"avoid", p_.avoid_enabled ? avoid_status_ : "off"},
     {"obs_gap", last_gap_ ? fmt("%.1f", *last_gap_) : "-"},
+    {"detour_room", (room_needed_ && now - room_time_ < 6.0) ? fmt("%.1f", *room_needed_) : "-"},
     {"stop_below", fmt("%.1f", p_.stop_margin + stopping_distance(v_stop))},
     {"sensors", sensors_text(now)},
     {"stop_model", fmt("react %.1fs decel %.2f -> %.1f m @4km/h, ", p_.react, p_.decel,

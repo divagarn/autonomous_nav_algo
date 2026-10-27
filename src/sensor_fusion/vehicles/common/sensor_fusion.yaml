@@ -1,0 +1,259 @@
+sensor_fusion:
+  ros__parameters:
+    radar_topic: /smart_radar/can_targets_0
+    odom_topic: /odom
+    steering_topic: /steering_angle  # std_msgs/Float32
+    camera_objects_topic: /object_detection/objects
+    output_frame: map                # Cartesian object and path output; requires map -> base_link TF
+    base_frame: base_link            # vehicle frame used with the configured radar mount below
+    reorder_delay: 0.0               # s; 0 = every message is processed on arrival (no waiting)
+    timing_log_s: 10.0               # log cycle processing times every N s (0 = off)
+    radar_height_above_ground: 0.5   # m; set by launch (ground filter, camera gates, path)
+
+    ego_motion:
+      speed_source: radar_doppler    # radar_doppler | odom   (yaw rate always from odom)
+      radar_mount_x: 2.2             # temporary bag/real default: front bumper from rear-axle base_link
+      radar_mount_y: 0.0
+      radar_mount_yaw: 0.0
+
+    # ---------------------------------------------------------------- radar pipeline
+    radar:
+      # radar tracking: ekf (default) = radar_tracker node (the EKF tracker + mirror-ghost
+      # detection, ros2 launch radar_tracker radar_tracker.launch.py); imm = clustering + IMM below
+      tracker: ekf
+      ekf:
+        tracks_topic: /radar_tracker/tracks
+        drop_mirror_ghosts: true       # as the EKF tracker's MIO selection
+        drop_ground_reflections: true
+        # moving/stationary: fusion = over-ground speed + hysteresis | ekf_flag = the EKF tracker's is_dynamic
+        # (relative to the radar: while the buggy drives, static objects are flagged moving too)
+        motion_source: fusion
+      min_range: 1.0
+      max_range: 80.0
+      min_snr: 0.0
+      min_rcs: -100.0
+      max_abs_azimuth: 1.0           # rad (~57 deg)
+      z_min: -3.0
+      z_max: 4.0
+      # 1. ground / overhead removal (heights above ground; each test allows range * elevation_std slack)
+      ground_filter: true
+      elevation_std: 0.05            # rad, radar elevation noise
+      below_ground_margin: 0.15      # drop returns below ground - margin (road, multipath)
+      ground_band: 0.25              # static weak returns measured lower than this are ground clutter
+      ground_max_rcs: 0.0            # dBsm
+      static_speed: 0.3              # m/s over ground
+      overhead_height: 3.5           # drop returns higher than this (trees, signs, ceilings)
+      # 2. DBSCAN on (x, y, over-ground Doppler)
+      cluster_eps_xy: 1.0            # m
+      cluster_eps_rel: 0.02          # + 2 % of range
+      cluster_eps_doppler: 1.5       # m/s
+      cluster_min_points: 1          # core point size; > 1 drops isolated points as noise
+      # measurement noise
+      range_std: 0.25
+      azimuth_std: 0.02
+      doppler_std: 0.3
+      glint_std: 0.4                 # m, reflection point wander on extended objects (hedges, walls)
+      use_doppler: true
+
+    # 3. IMM tracker
+    imm:
+      models: [st, cv, ct]           # stationary + constant velocity + coordinated turn
+      pos_std_st: 0.1                # stationary position random walk [m/sqrt(s)]
+      accel_std_cv: 1.5
+      accel_std_ct: 1.0
+      yaw_accel_std: 0.5
+      transition: [0.95, 0.04, 0.01,
+                   0.03, 0.92, 0.05,
+                   0.01, 0.07, 0.92]
+      initial_mode_probs: [0.5, 0.4, 0.1]
+      stationary_prob: 0.6           # P(st) above this -> motion_state stationary
+      moving_min_sigma: 2.0          # moving only if speed > 2 std of the speed estimate
+      motion_alpha: 0.3              # stationary/moving temporal filter: EMA of the per-scan evidence
+      motion_enter: 0.7              # -> moving above this
+      motion_exit: 0.3               # -> stationary below this
+      turn_rate_threshold: 0.1       # rad/s, with CT dominant -> turning
+
+    tracker:
+      init_vel_std_radial: 0.7
+      init_vel_std_tangential: 4.0
+      gate_chi2: 13.8                # cluster -> track (position + Doppler)
+      absorb_gate: 9.0               # unmatched cluster this close to an updated track: no new track
+      confirm_hits: 1                # hits within confirm_window scans
+      confirm_window: 5
+      tentative_max_missed: 1        # scans
+      max_missed: 2                  # scans (~0.33 s at 15 Hz)
+      existence_init: 0.3            # existence probability: birth value
+      existence_hit_gain: 0.3        # hit:  pe += gain * (1 - pe)
+      existence_miss_factor: 0.7     # miss: pe *= factor
+      ghost_check: true              # double-bounce ghosts: same bearing, 2x range, 2x relative radial speed
+      ghost_az_tol_deg: 3.0
+      ghost_range_tol: 0.1           # relative
+      ghost_doppler_tol: 1.0         # m/s
+      ghost_min_count: 3             # scans
+      max_pos_std: 4.0
+      max_range: 80.0
+      moving_speed_threshold: 0.6
+      merge_distance: 0.8
+      # --- mechanisms from the EKF tracker (radar_tracker/ekf), used by radar.tracker imm ---
+      gating: ekf                    # ekf: the EKF tracker's AdaptiveGating (motion-aligned ellipse, size by motion
+                                     #   class + object size, radial consistency) | chi2: gate_chi2 above
+      ekf_radial_gate: 3.0           # m/s, |predicted - measured relative radial speed|
+      mirror_check: true             # The EKF tracker's MirrorDetector: N-fold ghosts of the nearest stationary reflector
+      mirror:
+        stationary_speed: 1.5        # m/s, reflector over-ground speed
+        min_hits: 5
+        lane_half_width: 4.5         # m, reflector |y|
+        fold_orders: [2, 3, 4, 5, 6]
+        range_tol: 2.5               # m, |r_ghost - N r_ref|
+        lateral_tol: 2.0             # m
+        speed_tol: 1.0               # m/s, ||vr_ghost| - N |vr_ref||
+        require_doppler_separation: true   # not in the EKF tracker: ghost only if its Doppler differs from the reflector's by
+                                           # > speed_tol (else, at buggy speed, real objects at N x range are dropped)
+        forget_frames: 8
+        ego_stationary: 0.3          # m/s, below: flags frozen
+      ground_check: true             # stationary track with height < ground_z_threshold (and mean-RCS EMA < ground_rcs_max)
+                                     #   and no camera box on it
+                                     #   = ground / overdrivable (drain cover, grating): not in the object list (both modes)
+      ground_z_threshold: 0.30       # m above ground (EKF tracker: 0.12); people measure >= 0.4 m, low returns wander up to ~0.26 m
+      ground_rcs_max: 100.0          # dBsm; 100 = no RCS condition (EKF tracker: -5, misses strong metal covers)
+      ground_window: 15              # height from the last 15 detections, not an EMA: a speed breaker's single
+                                     #   returns at -0.5 / +0.9 m kept its EMA above 0.30 (bag_record_3, 205 s)
+      ground_quantile: 0.5           # quantile of those heights compared with ground_z_threshold (0.5 = median;
+                                     #   lower removes more ground but also parked cars with low bumper returns)
+      ground_min_samples: 8          # a new stationary track is listed once 8 detection heights are known
+                                     #   (~0.5 s; an IMM speed-breaker track reached 6)
+
+    # ---------------------------------------------------------------- camera
+    detector_model_type: yolov8      # set by launch from the detector model: yolox -> yolox_scores below
+    camera_tracker:                  # ByteTrack on the detector boxes (score thresholds: YOLOv8)
+      high_thresh: 0.5
+      low_thresh: 0.15
+      new_track_thresh: 0.5
+      match_iou: 0.3
+      low_match_iou: 0.5
+      min_hits: 3
+      max_lost_s: 0.5
+      class_consistent: true
+
+    # YOLOX 18 classes scores people far lower on our camera (bag_record_3: median person 0.23 vs YOLOv8
+    # 0.81; person >= 0.5 in 1 % of the frames vs 78 %): with the YOLOv8 thresholds it starts no camera
+    # tracks and the fused objects stay 'unknown'. Used instead of the values above with YOLOX.
+    yolox_scores:
+      high_thresh: 0.2
+      low_thresh: 0.1
+      new_track_thresh: 0.2
+      min_detection_score: 0.2
+
+    camera:                          # radar track <-> camera box (one box per track at most)
+      enabled: true
+      intrinsics_file: ""            # set by launch (calibration app output, perception_apps format)
+      extrinsics_file: ""
+      rectified: true                # detections come from the rectified image (object_detection)
+      rectify_balance: 0.0           # must match object_detection
+      rectify_fov_scale: 1.0
+      min_detection_score: 0.3       # YOLOv8
+      # gates (pixels at 1920 px width, scaled to the image)
+      margin_px: 24.0                # horizontal: track projects inside the box +- margin
+      object_height: 2.5             # vertical: [ground, ground + h] at the track range overlaps the box
+      range_ratio_min: 0.5           # radar range / ground range of the box bottom
+      range_ratio_max: 2.0
+      border_px: 5.0                 # box bottom this close to the border: no range gate
+      # association: bearing d2 (gated) + closest-track preference -> bounded cheap JPDA -> one-to-one
+      gate_d2: 25.0                  # 5 sigma on the bearing residual
+      range_pref: 3.0                # m
+      jpda_max_candidates: 4
+      jpda_pd: 0.9
+      jpda_clutter: 0.001
+      # Bayes on the bearing (range, velocity, existence stay radar)
+      sigma_px: 4.0                  # camera bearing noise: px (at 1920) + frac * box width
+      sigma_frac: 0.03
+      sigma_extent: 0.5              # m, radar point vs box centre
+      sigma_radar_min_deg: 0.5
+      radar_min_weight: 0.6          # radar keeps at least this share of the fused bearing
+      consistency_sigma: 3.0         # larger disagreement -> no bearing correction
+      hold_s: 0.3                    # status radar+camera is kept this long on radar cycles
+      class_vote_decay: 0.97         # class temporal filter (per associated frame)
+      class_keep_s: 1.0              # s; no camera association this long -> class "unknown" again (0 = keep forever)
+      min_track_height: 0.30         # m above ground; lower tracks (kerb, drain cover) get no camera box ...
+      min_track_height_range: 10.0   # m; ... within this range (farther, the radar height is too noisy)
+      # detector labels never fused with radar tracks (published by object_detection, ByteTrack still tracks them)
+      ignore_classes: [pothole, road damage, traffic light, traffic sign]
+
+    lane:                            # lane / road boundaries from object_detection's segmentation mask
+      enabled: true
+      topic: /object_detection/lane_mask
+      max_age: 0.5                   # s; older boundaries are not published
+      min_range: 3.0                 # m ahead of the radar; nearer mask rows (hood, bumper) skipped
+      max_range: 25.0                # m; flat-ground projection error grows with range
+      row_step: 4                    # every n-th mask row
+      max_lateral: 10.0              # m; boundary points further sideways dropped
+      min_run_px: 2                  # lane-marking runs shorter than this (mask px) are noise
+      max_gap_px: 6                  # road edge search crosses non-road gaps up to this (mask px)
+      max_occluder_px: 48            # ... and longer ones with road behind within this (person / object on the road)
+      max_edge_jump: 1.5             # m; edge points of successive rows further apart split the edge
+      max_edge_angle: 60.0           # deg; edge parts running further sideways (road ends / turns away) dropped
+      # detector labels on the road: pixels in their boxes are no road edge (hidden edge behind them)
+      occluder_classes: [person, pedestrian, partial pedestrian, bicycle, bicyclist, motorcycle, motorcyclist, animal]
+      keep_s: 0.6                    # s; points of older masks kept, moved with the ego motion
+      min_points: 6                  # per boundary
+      min_span: 4.0                  # m x extent for a boundary
+      quadratic_span: 5.0            # m; shorter extent: straight line
+      outlier: 0.5                   # m; robust fit residual
+      step: 1.0                      # m; spacing of the published points
+      min_width: 2.0                 # m; road width range for pairing the edges
+      max_width: 15.0
+      # tracked driving path from base_link (~/lane_path, FusedObjectArray lane_path + lane borders):
+      # points stay on the ground between masks and are corrected gently towards the road edges
+      path:
+        points: 21                   # incl. base_link: 21 = 0..20 m
+        spacing: 1.0                 # m
+        wheelbase: 1.6               # m (buggy.urdf.xacro)
+        max_steer_deg: 20.0          # deg (buggy.urdf.xacro max_steer_rad; bags: up to 17 deg used) -> radius >= 4.4 m
+        vehicle_width: 1.35          # m (buggy 2.82 x 1.35 m)
+        lane_margin: 0.5             # m each side: lane = vehicle_width + 2 x margin = 2.35 m
+        gain: 0.2                    # fraction of the error corrected per mask (10 Hz: ~0.5 s)
+        max_step: 0.15               # m; largest move of a point per mask
+        gate: 1.0                    # m; larger jumps ignored ...
+        gate_updates: 5              # ... unless they persist for this many masks
+        offset_rate: 0.05            # distance to the reference edge follows the vehicle this fast (per mask)
+        hold_distance: 15.0          # m driven without road edges before the path restarts from the steering
+        smoothing: 0.5
+
+    # ---------------------------------------------------------------- output
+    path:                            # predicted ego path -> in_path flag
+      enabled: true
+      curvature_source: odom         # steering | odom | auto (steering once non-zero, else odom yaw rate)
+      wheelbase: 1.6                 # m
+      steering_ratio: 1.0            # steering-wheel / road-wheel angle (1 if the topic is road-wheel)
+      steering_in_degrees: true
+      steering_offset: 0.0           # raw value when driving straight
+      steering_sign: 1.0             # +1 if positive turns left
+      half_width: 0.8                # vehicle half width + margin [m]
+      length: 40.0                   # m along the path
+      min_speed_odom: 0.5            # m/s; odom curvature held below this
+      max_curvature: 0.5             # 1/m
+      max_heading_change: 1.6        # rad (~90 deg); on tight turns the path ends after this turn
+      smoothing: 0.3           # EMA weight per curvature sample (steering / odom yaw rate are noisy)
+
+    relative_motion:
+      prediction_horizon: 0.5        # s; future position/path fields for planner decisions
+      radial_speed_threshold: 0.3    # m/s deadband for approaching vs moving_away
+      min_ego_speed: 0.3             # m/s; same_direction is undefined below this
+      min_object_speed: 0.3          # m/s; reject noisy velocity headings below this
+      same_direction_max_angle: 30.0 # deg between ego and object over-ground velocity
+
+    stop_zone:                       # corridor just ahead of the radar; planner stops on entry
+      horizon: 3.0                   # s; objects constant velocity, ego holds speed + yaw rate
+      step: 0.1                      # s
+      min_distance: 3.0              # m ahead of the radar at standstill
+      time_headway: 1.5              # s; zone length += ego speed * headway
+
+    output:                          # /sensor_fusion/objects: confirmed radar tracks only
+      tf_tolerance: 0.5              # s; max age of the newest TF when it does not cover the output stamp (gap bridged with ego motion)
+      trigger: all                # camera: publish per camera frame (30 Hz), radar only updates tracks
+                                     #   (radar publishes if the camera is silent > camera_timeout); all: both
+      camera_timeout: 0.2            # s
+      max_range: 40.0                # m; every object in front within this range (in_path is only a field)
+      min_existence: 0.6             # existence probability to enter the final list
+      keep_existence: 0.3            # ... and to stay in it (pedestrians miss single scans: ~3 misses)
+      max_static_height: 2.0         # m; stationary radar-only tracks higher than this (canopy) are dropped

@@ -307,11 +307,13 @@ struct AvoidRig
   int cleared = 0;
   double t = 100.0;
   std::vector<PathPt> original;
-  AvoidRig()
+  explicit AvoidRig(double clear_sec = 2.0)
   {
+    p.avoid_clear_sec = clear_sec;
     p.drive_enabled = true;
     p.avoid_enabled = true;
     p.avoid_stop_early = true;           // the early stop / probing is opt-in (config avoid_stop_early)
+    p.avoid_stop_follow_planner = true;  // these tests exercise the planner-driven stop line
     p.react = 0.8; p.decel = 0.7;
     Hooks h;
     h.pose = [this]() { return pose; };
@@ -511,4 +513,100 @@ TEST(Replan, FixedStopMarginWithoutProbe)
   const double stop_below = std::stod(st.substr(pos + 11));
   EXPECT_GT(stop_below, 4.0);        // fixed margin 4.0 + stopping distance, not the default 2.5
   EXPECT_LT(stop_below, 7.0);
+}
+
+TEST(Replan, ProbeOnlyReportsWhenTheStopLineIsConfigured)
+{
+  CoreParams p;
+  p.drive_enabled = true; p.avoid_enabled = true;
+  p.avoid_stop_early = true; p.avoid_probe = true; p.avoid_stop_follow_planner = false;   // the defaults
+  p.avoid_stop_margin = 4.0;
+  p.react = 0.8; p.decel = 0.7;
+  std::optional<Pose> pose = Pose{0.0, 0.0, 0.0, 0.0};
+  std::vector<std::string> sent, warnings;
+  Hooks h;
+  h.pose = [&pose]() { return pose; };
+  h.avoid_request = [&sent](const std::string & j) { sent.push_back(j); };
+  h.log = [&warnings](Level l, const std::string & m) { if (l == Level::Warn) {warnings.push_back(m);} };
+  OperationCore core(p, h);
+  std::vector<PathPt> path;
+  for (int i = 0; i <= 160; ++i) {path.push_back({i * 0.5, 0.0, 0.0, 0.0, 1.0});}
+  core.on_path(path);
+  double t = 100.0;
+  core.on_loc("state=converged", t);
+  core.on_lidar({}, t);
+  core.on_request("mode:auto");
+  const Obj wall{25.0, 0.0, 0.0, 0.5, 1.0, 7};
+  const auto tick = [&]() {
+      t += 0.05;
+      core.on_loc("state=converged", t);
+      core.on_lidar({wall}, t);
+      core.on_wheel(0.0, 4.0);
+      core.step_live(t);
+    };
+  for (int i = 0; i < 40; ++i) {tick();}
+  ASSERT_FALSE(sent.empty());                                    // the probe goes out
+  const auto stop_before = core.state_string(t);
+  const auto probe = nlohmann::json::parse(sent.back());
+  core.on_avoid_result(nlohmann::json({{"id", probe["id"]}, {"probe", true}, {"ok", false}, {"room_needed", 9.0}}).dump(), t);
+  tick();
+  const auto stop_after = core.state_string(t);
+  const auto val = [](const std::string & s) { return std::stod(s.substr(s.find("stop_below=") + 11)); };
+  EXPECT_NEAR(val(stop_after), val(stop_before), 0.6) << "the stop line must stay at avoid_stop_margin";
+  EXPECT_LT(val(stop_after), 7.0);
+  EXPECT_NE(stop_after.find("detour_room=9.0"), std::string::npos) << stop_after;
+  tick();
+  EXPECT_EQ(warnings.size(), 1u) << "one warning that the stop line is closer than the estimated room";
+}
+
+// A small obstacle (pedestrian) must give the vehicle as long to see it gone as a big one (car): the window
+// ends when the vehicle's front reaches the NEAR EDGE of the blocker, not its centre. The vehicle really
+// drives the detour at 5 km/h; the obstacle is removed 0.5 s after the detour started.
+namespace
+{
+bool restored_after_removal(double len, double wid, int cls, double clear_sec)
+{
+  AvoidRig r(clear_sec);
+  const double ox = 40.0, kmh = 5.0;
+  const Obj ob{ox, 0.0, 0.0, len, wid, cls};
+  r.pose = Pose{ox - len / 2 - 4.0 - 2.2, 0.0, 0.0, 0.0};          // stopped 4 m before the near edge
+  for (int i = 0; i < 130; ++i) {r.tick({ob}, 0.0);}
+  if (r.requests.empty()) {return false;}
+  const auto req = nlohmann::json::parse(r.requests.back());
+  Poly pts;
+  for (const auto & q : req["points"]) {pts.push_back({q[0], q[1], q[2]});}
+  std::vector<Box> obs;
+  for (const auto & o : req["obstacles"]) {obs.push_back({o[0], o[1], o[2], o[3], o[4]});}
+  auto res = plan_detour(pts, obs, nullptr, nullptr, AvoidParams{});
+  if (!res["ok"].get<bool>()) {return false;}
+  res.erase("zone");
+  res["id"] = req["id"];
+  r.core->on_avoid_result(res.dump(), r.t);
+  const auto & seg = res["segment"];
+  double travelled = 0.0;
+  for (int i = 0; i < 400 && r.core->avoiding(); ++i) {
+    travelled += kmh / 3.6 * 0.05;
+    double px = seg[0][0].get<double>(), py = seg[0][1].get<double>(), acc = 0.0;
+    for (size_t q = 1; q < seg.size(); ++q) {
+      const double dx = seg[q][0].get<double>() - seg[q - 1][0].get<double>();
+      const double dy = seg[q][1].get<double>() - seg[q - 1][1].get<double>();
+      const double d = std::hypot(dx, dy);
+      if (acc + d >= travelled) {
+        px = seg[q - 1][0].get<double>() + (travelled - acc) / d * dx;
+        py = seg[q - 1][1].get<double>() + (travelled - acc) / d * dy;
+        break;
+      }
+      acc += d;
+    }
+    r.pose = Pose{px, py, 0.0, 0.0};
+    r.tick(i * 0.05 < 0.5 ? std::vector<Obj>{ob} : std::vector<Obj>{}, kmh);
+  }
+  return !r.core->avoiding() && r.core->message().find("Route restored") != std::string::npos;
+}
+}  // namespace
+
+TEST(Replan, SmallObstacleRevertsLikeABigOne)
+{
+  EXPECT_TRUE(restored_after_removal(4.5, 1.8, 2, 1.0)) << "car";
+  EXPECT_TRUE(restored_after_removal(0.6, 0.6, 7, 1.0)) << "pedestrian";
 }

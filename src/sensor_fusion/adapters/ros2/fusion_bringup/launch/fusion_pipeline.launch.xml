@@ -1,0 +1,173 @@
+<!--
+  Three independent nodes:
+    object_detection     /camera/image_raw -> rectify -> YOLOX -> /object_detection/objects (+ image_rect)
+                                                   -> lane segmentation -> /object_detection/lane_mask
+    radar_tracker        radar_tracker:=ekf (default): the EKF tracker -> /radar_tracker/tracks
+    sensor_fusion        radar tracks (ekf) or radar + IMM (radar_tracker:=imm) + odom + steering + boxes -> 2D ByteTrack +
+                         Bayes image-plane fusion + ego path + lane / road boundaries -> /sensor_fusion/objects
+    fusion_visualization RViz markers of the fused tracks: ~/markers all objects, ~/markers_relevant
+                         moving or in-path objects (RViz also shows the plain camera image);
+                         overlay:=true adds the old image with boxes drawn on it
+
+  PC (detections + lane masks pre-computed once per bag: ./run_fusion.sh dump <bag>):
+    ros2 launch fusion_bringup fusion_pipeline.launch.xml platform:=pc \
+        bag:=$PWD/../bag_record_3_intersept_v1
+  Orin (YOLOX + lane TensorRT on the live camera):
+    ros2 launch fusion_bringup fusion_pipeline.launch.xml platform:=orin use_sim_time:=false \
+        model_path:=$PWD/models/yolox_s_18class_fp16.engine lane_model_path:=$PWD/models/lane_seg_up_fp16.engine
+-->
+<launch>
+  <arg name="platform" default="pc" description="pc | orin"/>
+  <!-- calibration app output (perception_apps format) -->
+  <arg name="vehicle" default="buggy" description="calibration folder in fusion_vehicles (vehicles/&lt;vehicle&gt;/)"/>
+  <arg name="intrinsics_file" default="$(find-pkg-share fusion_vehicles)/$(var vehicle)/front_intrinsics.yaml"/>
+  <arg name="extrinsics_file" default="$(find-pkg-share fusion_vehicles)/$(var vehicle)/radar_camera_extrinsics.yaml"/>
+  <arg name="rectify_balance" default="0.0" description="0 = crop to valid pixels, 1 = keep full fisheye view"/>
+  <arg name="rectify_fov_scale" default="1.0"/>
+  <arg name="image_topic" default="/camera/image_raw"/>
+  <arg name="bag" default="" description="rosbag2 directory to play, no trailing slash (empty = live sensors)"/>
+  <arg name="bag_rate" default="1.0"/>
+  <arg name="bag_read_ahead" default="3000" description="messages ros2 bag play buffers ahead (default 1000); raise if it reports 'Message queue starved'"/>
+  <arg name="detections_json" default="$(var bag)_detections_yolox_s_18class.json" description="PC json_replay: precompute_detections output"/>
+  <arg name="detector_model_type" default="yolox" description="yolox (18 classes) | yolov8 (COCO; set the classes in object_detection_*.yaml)"/>
+  <arg name="camera" default="true" description="camera detector (object_detection); false: radar only"/>
+  <arg name="lane" default="true" description="lane / road segmentation in object_detection + boundaries in sensor_fusion"/>
+  <arg name="lane_backend" default="auto" description="auto (pc: replay, orin: tensorrt) | onnxruntime"/>
+  <arg name="lane_model_path" default="" description="Orin: TensorRT engine; PC onnxruntime backend: .onnx"/>
+  <arg name="lane_replay_dir" default="$(var bag)_lane_seg_up" description="PC replay: precomputed masks"/>
+  <arg name="model_path" default="" description="Orin: TensorRT engine; PC onnxruntime backend: .onnx"/>
+  <arg name="detector_backend" default="auto" description="auto (pc: json_replay, orin: tensorrt) | onnxruntime | opencv_dnn"/>
+  <arg name="radar_height" default="0.41" description="radar height above ground [m] (from calibration measurements)"/>
+  <arg name="radar_mount_x" default="2.2" description="radar origin x in base_link [m], temporary front-bumper default used when radar TF is absent"/>
+  <arg name="radar_mount_y" default="0.0" description="radar origin y in base_link [m], used when radar TF is absent"/>
+  <arg name="radar_mount_yaw" default="0.0" description="radar yaw in base_link [rad], used when radar TF is absent"/>
+  <arg name="publish_radar_tf" default="false" description="publish configurable base_link -> umrr static TF (enable for bags that did not record it)"/>
+  <arg name="odom_topic" default="/odom" description="nav_msgs/Odometry for ego motion (Gazebo: /ackermann_steering_controller/odometry)"/>
+  <arg name="ego_speed_source" default="radar_doppler" description="radar_doppler | odom (Gazebo radar_sim has no Doppler: odom)"/>
+  <arg name="use_doppler" default="true" description="use radar Doppler in tracking (false for Gazebo radar_sim, radial_speed is always 0)"/>
+  <arg name="output_trigger" default="camera" description="camera: publish per detector frame (radar only after output.camera_timeout without camera) | all: also every radar scan"/>
+  <arg name="output_frame" default="map" description="Cartesian frame for /sensor_fusion/objects; requires TF from the radar/base at each stamp"/>
+  <arg name="base_frame" default="base_link" description="vehicle frame used with configured radar mount when radar TF is absent"/>
+  <arg name="reorder_delay" default="0.0" description="sensor-cycle holdback [s], useful for bag TF arriving just after sensor messages"/>
+  <arg name="output_tf_tolerance" default="0.5" description="max age [s] of the newest TF when it does not cover the output stamp (gap bridged with ego motion)"/>
+  <arg name="max_range" default="40.0" description="final object list range [m]"/>
+  <arg name="radar_fov" default="1.0" description="radar half field of view [rad] (filter + RViz sector)"/>
+  <arg name="radar_range" default="80.0" description="radar max range [m] (filter + RViz sector)"/>
+  <arg name="relative_prediction_horizon" default="0.5" description="future fused-object prediction horizon [s]"/>
+  <arg name="relative_radial_speed_threshold" default="0.3" description="closing-speed deadband [m/s]"/>
+  <arg name="relative_min_ego_speed" default="0.3" description="minimum ego speed for same_direction [m/s]"/>
+  <arg name="relative_min_object_speed" default="0.3" description="minimum object speed for same_direction [m/s]"/>
+  <arg name="relative_same_direction_max_angle" default="30.0" description="maximum ego/object heading difference [deg]"/>
+  <arg name="radar_tracker" default="ekf" description="ekf: the EKF radar tracker (radar_tracker node) | imm: sensor_fusion's clustering + IMM tracker"/>
+  <arg name="use_sim_time" default="true"/>
+  <arg name="rviz" default="true"/>
+  <arg name="visualization" default="true" description="fusion_visualization markers node (false = detection + fusion only)"/>
+  <arg name="overlay" default="false" description="draw the fused boxes on the image (/fusion_visualization/overlay)"/>
+  <arg name="show_window" default="false" description="also show the overlay in an OpenCV window (needs overlay:=true)"/>
+  <arg name="overlay_rate" default="15.0" description="overlay image rate [Hz], 0 = every camera frame"/>
+  <arg name="overlay_scale" default="1.0" description="overlay image scale (0.5 = 4x smaller)"/>
+  <arg name="record" default="false" description="record fusion + detection + visualization outputs"/>
+  <arg name="record_path" default="fusion_record" description="output bag directory (must not exist)"/>
+
+  <node pkg="object_detection" exec="object_detection_node" name="object_detection" output="screen"
+        if="$(var camera)">
+    <param from="$(find-pkg-share object_detection)/config/object_detection_$(var platform).yaml"/>
+    <param name="image_topic" value="$(var image_topic)"/>
+    <param name="rectify.intrinsics_file" value="$(var intrinsics_file)"/>
+    <param name="rectify.balance" value="$(var rectify_balance)"/>
+    <param name="rectify.fov_scale" value="$(var rectify_fov_scale)"/>
+    <param name="detector.backend" value="$(var detector_backend)"/>
+    <param name="detector.json_file" value="$(var detections_json)"/>
+    <param name="detector.model_path" value="$(var model_path)"/>
+    <param name="detector.model_type" value="$(var detector_model_type)"/>
+    <param name="lane.enabled" value="$(var lane)"/>
+    <param name="lane.backend" value="$(var lane_backend)"/>
+    <param name="lane.model_path" value="$(var lane_model_path)"/>
+    <param name="lane.replay_dir" value="$(var lane_replay_dir)"/>
+    <param name="use_sim_time" value="$(var use_sim_time)"/>
+  </node>
+
+  <node pkg="radar_tracker" exec="radar_tracker_node" name="radar_tracker" output="screen"
+        if="$(eval '&quot;$(var radar_tracker)&quot; == &quot;ekf&quot;')">
+    <param from="$(find-pkg-share fusion_vehicles)/common/radar_tracker.yaml"/>
+    <param name="odom_topic" value="$(var odom_topic)"/>
+    <param name="mount_z" value="$(var radar_height)"/>
+    <param name="use_sim_time" value="$(var use_sim_time)"/>
+  </node>
+
+  <node pkg="sensor_fusion" exec="sensor_fusion_node" name="sensor_fusion" output="screen">
+    <param from="$(find-pkg-share fusion_vehicles)/common/sensor_fusion.yaml"/>
+    <param name="radar.tracker" value="$(var radar_tracker)"/>
+    <param name="lane.enabled" value="$(var lane)"/>
+    <param name="detector_model_type" value="$(var detector_model_type)"/>
+    <param name="camera.intrinsics_file" value="$(var intrinsics_file)"/>
+    <param name="camera.extrinsics_file" value="$(var extrinsics_file)"/>
+    <param name="camera.rectify_balance" value="$(var rectify_balance)"/>
+    <param name="camera.rectify_fov_scale" value="$(var rectify_fov_scale)"/>
+    <param name="radar_height_above_ground" value="$(var radar_height)"/>
+    <param name="ego_motion.radar_mount_x" value="$(var radar_mount_x)"/>
+    <param name="ego_motion.radar_mount_y" value="$(var radar_mount_y)"/>
+    <param name="ego_motion.radar_mount_yaw" value="$(var radar_mount_yaw)"/>
+    <param name="output_frame" value="$(var output_frame)"/>
+    <param name="output.trigger" value="$(var output_trigger)"/>
+    <param name="odom_topic" value="$(var odom_topic)"/>
+    <param name="ego_motion.speed_source" value="$(var ego_speed_source)"/>
+    <param name="radar.use_doppler" value="$(var use_doppler)"/>
+    <param name="base_frame" value="$(var base_frame)"/>
+    <param name="reorder_delay" value="$(var reorder_delay)"/>
+    <param name="output.tf_tolerance" value="$(var output_tf_tolerance)"/>
+    <param name="output.max_range" value="$(var max_range)"/>
+    <param name="radar.max_abs_azimuth" value="$(var radar_fov)"/>
+    <param name="radar.max_range" value="$(var radar_range)"/>
+    <param name="relative_motion.prediction_horizon" value="$(var relative_prediction_horizon)"/>
+    <param name="relative_motion.radial_speed_threshold" value="$(var relative_radial_speed_threshold)"/>
+    <param name="relative_motion.min_ego_speed" value="$(var relative_min_ego_speed)"/>
+    <param name="relative_motion.min_object_speed" value="$(var relative_min_object_speed)"/>
+    <param name="relative_motion.same_direction_max_angle" value="$(var relative_same_direction_max_angle)"/>
+    <param name="use_sim_time" value="$(var use_sim_time)"/>
+  </node>
+
+  <!-- Optional mount TF for old bags. Disable if the real driver/URDF already publishes umrr. -->
+  <node pkg="tf2_ros" exec="static_transform_publisher" name="radar_mount_tf"
+        args="--x $(var radar_mount_x) --y $(var radar_mount_y) --z $(var radar_height)
+              --roll 0 --pitch 0 --yaw $(var radar_mount_yaw)
+              --frame-id $(var base_frame) --child-frame-id umrr"
+        if="$(var publish_radar_tf)"/>
+
+  <node pkg="fusion_visualization" exec="fusion_visualization_node" name="fusion_visualization" output="screen"
+        if="$(var visualization)">
+    <param from="$(find-pkg-share fusion_visualization)/config/fusion_visualization.yaml"/>
+    <param name="camera.intrinsics_file" value="$(var intrinsics_file)"/>
+    <param name="camera.extrinsics_file" value="$(var extrinsics_file)"/>
+    <param name="camera.rectify_balance" value="$(var rectify_balance)"/>
+    <param name="camera.rectify_fov_scale" value="$(var rectify_fov_scale)"/>
+    <param name="radar_height_above_ground" value="$(var radar_height)"/>
+    <param name="range_ring_m" value="$(var max_range)"/>
+    <param name="radar_fov.max_abs_azimuth" value="$(var radar_fov)"/>
+    <param name="radar_fov.max_range" value="$(var radar_range)"/>
+    <param name="overlay.enabled" value="$(var overlay)"/>
+    <param name="overlay.show_window" value="$(var show_window)"/>
+    <param name="overlay.max_rate" value="$(var overlay_rate)"/>
+    <param name="overlay.scale" value="$(var overlay_scale)"/>
+    <param name="use_sim_time" value="$(var use_sim_time)"/>
+  </node>
+
+  <node pkg="rviz2" exec="rviz2" name="rviz2" args="-d $(find-pkg-share fusion_bringup)/rviz/fusion.rviz -f $(var output_frame)"
+        if="$(var rviz)">
+    <param name="use_sim_time" value="$(var use_sim_time)"/>
+  </node>
+
+  <!-- outputs only (inputs are in the original bag); replay with: ros2 bag play <record_path> -->
+  <!-- no images by default (1.5 MB each; replay the camera from the input bag if needed) -->
+  <executable cmd="ros2 bag record -o $(var record_path) /sensor_fusion/objects /sensor_fusion/tracks
+                   /sensor_fusion/camera_tracks /object_detection/objects /object_detection/lane_mask /radar_tracker/tracks
+                   /fusion_visualization/markers /fusion_visualization/markers_relevant /fusion_visualization/lane_markers_base /sensor_fusion/lane_path"
+              output="screen" if="$(var record)"/>
+
+  <!-- /map and /velodyne_points are replayed for RViz only; no SLAM or map-writing
+       process runs; fusion does not use the lidar. -->
+  <executable cmd="ros2 bag play $(var bag) --clock --rate $(var bag_rate) --read-ahead-queue-size $(var bag_read_ahead)
+                   --topics /smart_radar/can_targets_0 /odom /steering_angle /camera/image_raw /tf /tf_static
+                            /map /map_metadata /velodyne_points"
+              output="screen" unless="$(eval '&quot;$(var bag)&quot; == &quot;&quot;')"/>
+</launch>

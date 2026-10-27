@@ -53,7 +53,13 @@ endif()
 
 ament_auto_find_build_dependencies()
 
-set(SMARTMICRO_LIB_DIR "lib-linux-x86_64-gcc_9")
+# vendor libraries per CPU: Orin / TDA4 = aarch64 (armv8), PC = x86_64 (the folder must exist in smartmicro/)
+if(CMAKE_SYSTEM_PROCESSOR MATCHES "aarch64|arm64" AND
+   EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/smartmicro/lib-linux-armv8-gcc_9")
+  set(SMARTMICRO_LIB_DIR "lib-linux-armv8-gcc_9")
+else()
+  set(SMARTMICRO_LIB_DIR "lib-linux-x86_64-gcc_9")
+endif()
 
 # specify the path to search for the libraries
 link_directories(${CMAKE_CURRENT_SOURCE_DIR}/smartmicro/${SMARTMICRO_LIB_DIR})
