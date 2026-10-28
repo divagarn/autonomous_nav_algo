@@ -20,6 +20,8 @@ def generate_launch_description():
         DeclareLaunchArgument('avoidance', default_value='true',
                               description='go around an obstacle that blocks the lane for >5 s'),
         DeclareLaunchArgument('core', default_value='python', description='python | cpp'),
+        DeclareLaunchArgument('mission', default_value='false'),
+        DeclareLaunchArgument('mission_file', default_value=''),
         DeclareLaunchArgument('autoware_map_loaders', default_value='false'),
         DeclareLaunchArgument('params', default_value='', description='your own parameter YAML'),
         IncludeLaunchDescription(
@@ -29,6 +31,8 @@ def generate_launch_description():
                 'rviz': LaunchConfiguration('rviz'),
                 'avoidance': LaunchConfiguration('avoidance'),
                 'core': LaunchConfiguration('core'),
+                'mission': LaunchConfiguration('mission'),
+                'mission_file': LaunchConfiguration('mission_file'),
                 'params': LaunchConfiguration('params'),
             'autoware_map_loaders': LaunchConfiguration('autoware_map_loaders'),
                 'rviz_config': os.path.join(pkg, 'rviz', 'buggy.rviz'),

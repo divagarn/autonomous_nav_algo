@@ -42,6 +42,8 @@ def generate_launch_description():
         # this sim track has wall pieces ~0.3 m from the vehicle body; the real default
         # (1.25 m) would hold the vehicle at the first one
         DeclareLaunchArgument('corridor_half_width', default_value='0.85'),
+        DeclareLaunchArgument('mission', default_value='false'),
+        DeclareLaunchArgument('mission_file', default_value=''),
         IncludeLaunchDescription(
             PythonLaunchDescriptionSource(os.path.join(pkg, 'launch', 'live.launch.py')),
             launch_arguments={
@@ -51,6 +53,8 @@ def generate_launch_description():
                 'gui': LaunchConfiguration('gui'),
                 'avoidance': LaunchConfiguration('avoidance'),
                 'core': LaunchConfiguration('core'),
+                'mission': LaunchConfiguration('mission'),
+                'mission_file': LaunchConfiguration('mission_file'),
                 'params': LaunchConfiguration('params'),
             'autoware_map_loaders': LaunchConfiguration('autoware_map_loaders'),
                 'radar': LaunchConfiguration('radar'),

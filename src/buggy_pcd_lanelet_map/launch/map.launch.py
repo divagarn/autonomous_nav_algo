@@ -32,6 +32,7 @@ from launch.substitutions import LaunchConfiguration
 from launch_ros.actions import Node
 from launch_ros.parameter_descriptions import ParameterValue
 
+from buggy_pcd_lanelet_map import mission as mission_file
 from buggy_pcd_lanelet_map.paths import config_files, resolve_map
 
 
@@ -223,6 +224,17 @@ def launch_setup(context):
         rviz = [rviz]
     nodes = [projection_loader, lanelet2_loader, pcd_loader, marker_pub, vehicle, route_planner,
              map_display, operation_manager, dummy_objects]
+    # mission:=true: drive the named stops of <map>/mission.yaml one after the other (waits at each)
+    if LaunchConfiguration('mission').perform(context).lower() == 'true':
+        mfile = mission_file.mission_path(map_path, LaunchConfiguration('mission_file').perform(context))
+        mdata = mission_file.load(mfile)
+        for w in mission_file.warnings(mdata):
+            print(f'[map.launch] mission: {w}')
+        print(f'[map.launch] mission: {len(mdata["stops"])} stops from {mfile}  '
+              f'(start: ./buggy mission start)')
+        nodes.append(Node(
+            package='buggy_core', executable='mission_manager', name='mission_manager', output='screen',
+            parameters=[*cfg, mission_file.node_params(mdata), sim_time]))
     if LaunchConfiguration('avoidance').perform(context).lower() == 'true':
         # detour planner: lanes + (on the real/Gazebo stack) LiDAR free space
         nodes.append(Node(
@@ -269,6 +281,10 @@ def generate_launch_description():
                               description='detour planner uses the LiDAR free space: auto = in live mode only'),
         DeclareLaunchArgument('avoidance', default_value='false',
                               description='go around an obstacle that blocks the lane for >5 s'),
+        DeclareLaunchArgument('mission', default_value='false',
+                              description='drive the stops of <map>/mission.yaml (home, A, B ...) with a wait at each'),
+        DeclareLaunchArgument('mission_file', default_value='',
+                              description='mission file; empty = <map folder>/mission.yaml'),
         DeclareLaunchArgument('radar', default_value='false'),
         DeclareLaunchArgument('camera', default_value='false'),
         DeclareLaunchArgument('corridor_half_width', default_value='',

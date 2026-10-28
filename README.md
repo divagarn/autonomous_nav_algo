@@ -374,6 +374,67 @@ panels, navy 3D background #0C163C). Files: `src/buggy_pcd_lanelet_map/rviz/bugg
   NDT keeps up. On a laptop CPU, use `bag_rate:=0.35` for replay with `--camera`.
 * **Accuracy**: `base_link -> camera_link` in `camera_static_tf.py` is a rough estimate, not a calibration.
 
+## 3d. Mission: named stops (home, A, B ...) with a wait at each
+
+The buggy drives to stop 1, stands there `wait_sec` (default 10 s), drives on to stop 2, ... and after the last
+stop goes back to the first (`loop: true`) or ends. The stops are a file in the map folder,
+`data/maps/<map>/mission.yaml`:
+
+```yaml
+loop: true            # after the last stop go to the first again
+wait_sec: 10.0        # standing time at every stop
+start_as_home: true   # "home" is optional, see below
+stops:
+  - {name: A, x: 25.04, y: 33.21}
+  - {name: B, x: -7.55, y: 61.82, wait_sec: 20.0}     # own waiting time
+```
+
+**Home is optional.** With `start_as_home: true` there is no home in the file: home is wherever the buggy stands
+when you press `mission start` - set it in RViz with **2D Pose Estimate**, the usual start flow. It becomes the last
+stop "home" (A -> B -> home -> A ...), so the buggy returns to where it started. With `false` the loop is just
+A -> B -> A. A stop that is really named `home` in the file (fixed place) wins over the start pose.
+
+x, y are map metres (what RViz shows). The route planner snaps a stop that is off the lane to the nearest lane.
+`data/maps/small_loop/mission.yaml` holds example stops - replace them with your real places.
+
+| Command | What it does |
+|---|---|
+| `./buggy mission here NAME [MAP] [--wait SEC]` | add the vehicle's position NOW as a stop (stack running and localized) - drive to the place, run it |
+| `./buggy mission pick NAME [MAP] [--wait SEC]` | add the next RViz "2D Goal Pose" click as a stop |
+| `./buggy mission list [MAP]` / `check [MAP]` | show / validate the file (fields, duplicate names, stops closer than 4 m) |
+| `./buggy view\|live\|sim MAP --mission` | start the stack with the mission node (stops shown in RViz: yellow, the target green) |
+| RViz panel **Mission (stops A, B ...)** | **Start mission / Stop mission / Resume** buttons and the live state ("DRIVING: stop 2 of 3 \"B\"", "WAITING ... 6 s left") - the same as the three commands below; shows "mission node not running" when the stack was started without `--mission` |
+| `./buggy mission start [N]` | begin, at the first stop or at stop N (counted from 0); a stop the buggy already stands at is skipped |
+| `./buggy mission stop` / `resume` / `status` | stop the buggy and the mission / go on (only with `auto_restart: false`) / show the state |
+
+How it drives: the `mission_manager` node does what the operator does by hand - it sends the next stop as the goal
+(`/goal_pose`), waits for the new route, asks for AUTO (`/system/request mode:auto`), and sees `routing=arrived` in
+`/system/state`. Obstacle stops and detours happen inside a leg, as always. It works with the Python and the `--cpp`
+nodes. Behaviour (config/buggy_params.yaml, `mission_manager`): `auto_restart` (drive on by itself after the wait),
+`autostart`, `plan_timeout_sec`, `abort_stop_sec`, `at_stop_radius`.
+
+Safety: the mission only presses AUTO - the vehicle still needs `--drive` (and `--real` for the ECU). It is
+aborted (the buggy stays stopped, it never restarts by itself) when there is no route to the next stop, when AUTO is
+refused, or when AUTO drops to stop on the way for `abort_stop_sec` (operator STOP, emergency, a fault).
+`./buggy mission stop` also stops the buggy. Not tested on the real buggy.
+
+### The Buggy Manager app (set the stops with the mouse)
+
+```bash
+./buggy app
+```
+
+1. Pick the map and click **Waypoint Set**: the map opens in RViz (`./buggy view MAP`, its output is shown in the window).
+2. **A** / **B** -> then RViz **2D Goal Pose** on the lane. "Other stop" adds more (name, click type, optional
+   wait seconds). **Home is optional**: by default it is simply where the buggy starts - set it in RViz with
+   **2D Pose Estimate** before `mission start` (checkbox "Home = where the buggy starts"). "Fixed home" stores a
+   fixed place instead.
+3. Every click is written to `<map>/mission.yaml` at once and drawn in RViz (yellow discs with the name). The table
+   lets you move, delete, set the wait of a stop and switch the loop on/off.
+4. **Close map**, then drive it: `./buggy live MAP --drive --mission` and `./buggy mission start`.
+
+The app needs a desktop (Tk) and the ROS environment (`./buggy app` sets it). Test: `python3 -m pytest src/buggy_pcd_lanelet_map/test`.
+
 ## 4. Brake calibration
 
 ```bash

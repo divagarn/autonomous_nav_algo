@@ -1,0 +1,8 @@
+# Stops of this map, in driving order: ./buggy mission list|check|start|stop ...
+# (written by the Buggy Manager app / ./buggy mission; x, y are map metres)
+loop: true            # after the last stop go to the first again
+wait_sec: 10.0        # standing time at every stop without its own wait_sec
+start_as_home: true   # true = the RViz start pose is the last stop "home"
+stops:
+  - {name: A, x: 21.08, y: 19.88}
+  - {name: B, x: -52.06, y: 22.98}

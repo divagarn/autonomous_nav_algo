@@ -70,6 +70,12 @@ Visualization Manager:
             Value: /planning/route_marker
             Durability Policy: Transient Local
             Reliability Policy: Reliable
+        - Class: rviz_default_plugins/MarkerArray
+          Name: Mission stops
+          Enabled: true
+          Topic:
+            Value: /mission/markers
+            Reliability Policy: Reliable
         - Class: rviz_default_plugins/Path
           Name: Route Path
           Enabled: false

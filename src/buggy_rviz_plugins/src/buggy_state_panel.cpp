@@ -112,6 +112,35 @@ BuggyStatePanel::BuggyStatePanel(QWidget * parent)
   loop_box->setToolTip(
     "HOME = where AUTO was first engaged (or 'Set HOME here').\n"
     "Loop: plans the route back to HOME, plus laps-1 more laps; then press AUTO.");
+  // Mission: the named stops (A, B ... home) of the map, with a wait at each - needs the stack started with --mission
+  mission_label_ = new QLabel("mission node not running (start with --mission)");
+  mission_label_->setWordWrap(true);
+  mission_msg_label_ = new QLabel("");
+  mission_msg_label_->setWordWrap(true);
+  mission_msg_label_->setStyleSheet("color: #ffd166;");
+  mission_start_ = new QPushButton("Start mission");
+  mission_stop_ = new QPushButton("Stop mission");
+  mission_resume_ = new QPushButton("Resume");
+  mission_start_->setToolTip("Drive to the first stop, wait there, drive on to the next ... (needs --drive for the buggy to move)");
+  mission_stop_->setToolTip("Stop the buggy and end the mission");
+  mission_resume_->setToolTip("Go on after the wait (only with auto_restart: false)");
+  mission_stop_->setStyleSheet("QPushButton { padding: 6px; } QPushButton:enabled { background-color: #b23b3b; color: white; }");
+  auto * mission_row = new QHBoxLayout;
+  mission_row->addWidget(mission_start_);
+  mission_row->addWidget(mission_stop_);
+  mission_row->addWidget(mission_resume_);
+  auto * mission_layout = new QVBoxLayout;
+  mission_layout->addWidget(mission_label_);
+  mission_layout->addWidget(mission_msg_label_);
+  mission_layout->addLayout(mission_row);
+  auto * mission_box = new QGroupBox("Mission (stops A, B ...)");
+  mission_box->setLayout(mission_layout);
+  for (auto * b : {mission_start_, mission_stop_, mission_resume_}) {b->setEnabled(false);}
+  mission_timer_ = new QTimer(this);
+  mission_timer_->setInterval(1000);
+  connect(mission_timer_, &QTimer::timeout, this, &BuggyStatePanel::checkMissionAlive);
+  mission_timer_->start();
+
   auto * clear_button = new QPushButton("Clear route");
   auto * dummy_button = new QPushButton("Delete all dummies");
   clear_button->setStyleSheet(kButtonStyle);
@@ -129,9 +158,10 @@ BuggyStatePanel::BuggyStatePanel(QWidget * parent)
   grid->addWidget(loop_box, 1, 1);
   grid->setAlignment(vehicle_box, Qt::AlignTop);
   grid->setAlignment(loop_box, Qt::AlignTop);
-  grid->addLayout(bottom_row, 2, 0, 1, 2);
-  grid->addWidget(message_label_, 3, 0, 1, 2);
-  grid->setRowStretch(4, 1);
+  grid->addWidget(mission_box, 2, 0, 1, 2);
+  grid->addLayout(bottom_row, 3, 0, 1, 2);
+  grid->addWidget(message_label_, 4, 0, 1, 2);
+  grid->setRowStretch(5, 1);
   grid->setColumnStretch(0, 1);
   grid->setColumnStretch(1, 1);
   setLayout(grid);
@@ -141,6 +171,9 @@ BuggyStatePanel::BuggyStatePanel(QWidget * parent)
     });
   connect(home_button, &QPushButton::clicked, this, [this]() {request("home:go");});
   connect(set_home_button, &QPushButton::clicked, this, [this]() {request("home:set");});
+  connect(mission_start_, &QPushButton::clicked, this, [this]() {missionRequest("start");});
+  connect(mission_stop_, &QPushButton::clicked, this, [this]() {missionRequest("stop");});
+  connect(mission_resume_, &QPushButton::clicked, this, [this]() {missionRequest("resume");});
   connect(clear_button, &QPushButton::clicked, this, &BuggyStatePanel::onClearRoute);
   connect(dummy_button, &QPushButton::clicked, this, [this]() {
       if (dummy_pub_) {
@@ -183,6 +216,14 @@ void BuggyStatePanel::onInitialize()
   clear_pub_ = node->create_publisher<std_msgs::msg::Empty>("/planning/clear_route", 10);
   request_pub_ = node->create_publisher<std_msgs::msg::String>("/system/request", 10);
   dummy_pub_ = node->create_publisher<std_msgs::msg::String>("/dummy/request", 10);
+  mission_pub_ = node->create_publisher<std_msgs::msg::String>("/mission/request", 10);
+  mission_sub_ = node->create_subscription<std_msgs::msg::String>(
+    "/mission/state", 10,
+    [this](std_msgs::msg::String::ConstSharedPtr msg) {
+      QMetaObject::invokeMethod(
+        this, "setMissionState", Qt::QueuedConnection,
+        Q_ARG(QString, QString::fromStdString(msg->data)));
+    });
 
   state_sub_ = node->create_subscription<std_msgs::msg::String>(
     "/system/state", 10,
@@ -235,6 +276,55 @@ void BuggyStatePanel::setState(const QString & text)
   emergency_button_->setChecked(kv.value("emergency") == "true");
   if (!limit_spin_->hasFocus()) {
     limit_spin_->setValue(kv.value("velocity_limit").toDouble());
+  }
+}
+
+void BuggyStatePanel::missionRequest(const QString & text)
+{
+  if (mission_pub_) {
+    std_msgs::msg::String msg;
+    msg.data = text.toStdString();
+    mission_pub_->publish(msg);
+  }
+}
+
+void BuggyStatePanel::setMissionState(const QString & text)
+{
+  QMap<QString, QString> kv;
+  for (const QString & item : text.split(';')) {
+    const int eq = item.indexOf('=');
+    if (eq > 0) {
+      kv[item.left(eq)] = item.mid(eq + 1);
+    }
+  }
+  mission_seen_ = true;
+  mission_age_.restart();
+  const QString phase = kv.value("phase");
+  QString line = QString("%1: stop %2 of %3 \"%4\"")
+    .arg(phase.toUpper(), QString::number(kv.value("index").toInt() + 1), kv.value("stops"), kv.value("target"));
+  if (phase == "waiting") {
+    line += QString("  -  %1 s left").arg(kv.value("wait_left"));
+  }
+  line += QString("   (loop %1)").arg(kv.value("loop") == "true" ? "on" : "off");
+  mission_label_->setText(line);
+  mission_label_->setStyleSheet(
+    phase == "aborted" ? "color: #ff8a80; font-weight: bold;" :
+    (phase == "driving" || phase == "waiting") ? "color: #a5d6a7; font-weight: bold;" : "");
+  mission_msg_label_->setText(kv.value("msg"));
+  const bool running = phase == "planning" || phase == "driving" || phase == "waiting" || phase == "paused";
+  mission_start_->setEnabled(!running);
+  mission_stop_->setEnabled(running);
+  mission_resume_->setEnabled(phase == "paused");
+}
+
+void BuggyStatePanel::checkMissionAlive()
+{
+  if (mission_seen_ && mission_age_.isValid() && mission_age_.elapsed() > 3000) {
+    mission_seen_ = false;
+    mission_label_->setText("mission node not running (start with --mission)");
+    mission_label_->setStyleSheet("");
+    mission_msg_label_->setText("");
+    for (auto * b : {mission_start_, mission_stop_, mission_resume_}) {b->setEnabled(false);}
   }
 }
 

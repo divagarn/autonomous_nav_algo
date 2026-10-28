@@ -44,6 +44,7 @@ add_library(buggy_core_lib SHARED
   src/perception/ground_model.cpp
   src/perception/detector_core.cpp
   src/control/operation_core.cpp
+  src/control/mission_core.cpp
   src/planning/path_utils.cpp
   src/mapping/pcd_cells.cpp
   src/planning/lanelet_map.cpp
@@ -120,9 +121,13 @@ target_link_libraries(operation_manager buggy_core_lib)
 ament_target_dependencies(operation_manager rclcpp std_msgs nav_msgs geometry_msgs visualization_msgs
   tf2 tf2_ros autoware_perception_msgs ground_segmentation_msgs)
 
+add_executable(mission_manager src/control/mission_manager_node.cpp)
+target_link_libraries(mission_manager buggy_core_lib)
+ament_target_dependencies(mission_manager rclcpp std_msgs nav_msgs geometry_msgs visualization_msgs tf2 tf2_ros)
+
 install(TARGETS buggy_core_lib
   ARCHIVE DESTINATION lib LIBRARY DESTINATION lib RUNTIME DESTINATION bin)
-install(TARGETS uart_writer lidar_obstacle_detector operation_manager
+install(TARGETS uart_writer lidar_obstacle_detector operation_manager mission_manager
   segment_ground self_hit_filter wheel_odometry route_planner avoidance_planner
   map_projection_loader pointcloud_map_loader
   localization_manager uart_bridge lidar_preprocess odom_to_twist velodyne_static_tf DESTINATION lib/${PROJECT_NAME})
@@ -175,6 +180,8 @@ if(BUILD_TESTING)
     GOLDEN_DIR="${CMAKE_CURRENT_SOURCE_DIR}/test/perception")
   ament_add_gtest(test_pcd_cells test/mapping/test_pcd_cells.cpp)
   target_link_libraries(test_pcd_cells buggy_core_lib)
+  ament_add_gtest(test_mission_core test/control/test_mission_core.cpp)
+  target_link_libraries(test_mission_core buggy_core_lib)
   ament_add_gtest(test_operation_core test/control/test_operation_core.cpp)
   target_link_libraries(test_operation_core buggy_core_lib)
   target_compile_definitions(test_operation_core PRIVATE

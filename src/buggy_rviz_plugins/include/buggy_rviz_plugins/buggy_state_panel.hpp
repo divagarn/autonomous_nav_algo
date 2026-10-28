@@ -7,6 +7,8 @@
 #include <QMap>
 #include <QPushButton>
 #include <QString>
+#include <QElapsedTimer>
+#include <QTimer>
 
 #include <rclcpp/rclcpp.hpp>
 #include <rviz_common/panel.hpp>
@@ -18,7 +20,8 @@ namespace buggy_rviz_plugins
 
 // Autoware-style state panel: status read-outs, operation mode (Stop / Auto /
 // Local / Remote), gear, turn signal, velocity limit, emergency and
-// clear-route. Talks to buggy_pcd_lanelet_map's operation_manager via
+// clear-route and the mission (Start / Stop / Resume of the stops in <map>/mission.yaml, /mission/request +
+// /mission/state of the mission_manager node, shown as "not running" without --mission). Talks to buggy_pcd_lanelet_map's operation_manager via
 // /system/request (commands) and /system/state ("k=v;k=v" string).
 class BuggyStatePanel : public rviz_common::Panel
 {
@@ -31,9 +34,12 @@ public:
 private Q_SLOTS:
   void setState(const QString & text);
   void onClearRoute();
+  void setMissionState(const QString & text);
+  void checkMissionAlive();
 
 private:
   void request(const QString & text);
+  void missionRequest(const QString & text);
   QPushButton * addChoice(
     QButtonGroup * group, QLayout * layout, const QString & label, const QString & key,
     const QString & value);
@@ -53,10 +59,20 @@ private:
   QPushButton * emergency_button_;
   QMap<QString, QPushButton *> buttons_;  // keyed "<group>:<value>"
 
-  rclcpp::Subscription<std_msgs::msg::String>::SharedPtr state_sub_;
+  // Mission (named stops, mission_manager node): Start / Stop / Resume + what it is doing
+  QLabel * mission_label_;
+  QLabel * mission_msg_label_;
+  QPushButton * mission_start_;
+  QPushButton * mission_stop_;
+  QPushButton * mission_resume_;
+  QTimer * mission_timer_;
+  QElapsedTimer mission_age_;
+  bool mission_seen_{false};
+
+  rclcpp::Subscription<std_msgs::msg::String>::SharedPtr state_sub_, mission_sub_;
   rclcpp::Publisher<std_msgs::msg::String>::SharedPtr request_pub_;
   rclcpp::Publisher<std_msgs::msg::Empty>::SharedPtr clear_pub_;
-  rclcpp::Publisher<std_msgs::msg::String>::SharedPtr dummy_pub_;
+  rclcpp::Publisher<std_msgs::msg::String>::SharedPtr dummy_pub_, mission_pub_;
 };
 
 }  // namespace buggy_rviz_plugins

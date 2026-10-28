@@ -40,6 +40,7 @@ PY = {
 }
 CPP = {
     'operation_manager': 'buggy_core/src/control/operation_manager_node.cpp',
+    'mission_manager': 'buggy_core/src/control/mission_manager_node.cpp',
     'route_planner': 'buggy_core/src/planning/route_planner_node.cpp',
     'avoidance_planner': 'buggy_core/src/planning/avoidance_planner_node.cpp',
     'lidar_obstacle_detector': 'buggy_core/src/perception/lidar_obstacle_detector_node.cpp',

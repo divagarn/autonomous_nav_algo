@@ -208,6 +208,21 @@ map_display_cloud:
   ros__parameters:
     voxel_size: 0.3                  # RViz shows the map thinned to one point per voxel (0 = full map)
 
+# ---------------------------------------------------------------- mission (./buggy ... --mission)
+# The stops themselves (home, A, B ...) and their waiting time are in <map folder>/mission.yaml
+# (./buggy mission here NAME adds one). Here: how the mission behaves.
+mission_manager:
+  ros__parameters:
+    loop: true                 # after the last stop go to the first again (mission.yaml "loop:" wins)
+    start_as_home: false       # true = the pose set in RViz (2D Pose Estimate) when the mission starts becomes the last stop "home"
+                               # (mission.yaml "start_as_home:" wins; the Buggy Manager app writes it)
+    auto_restart: true         # true = drive on by itself after the waiting time; false = wait for ./buggy mission resume
+    autostart: false           # true = start by itself once localized (no ./buggy mission start); only with an armed --drive
+    plan_timeout_sec: 5.0      # no route from the planner after this long -> mission aborted
+    abort_stop_sec: 2.0        # AUTO dropped to STOP (operator, fault) this long on the way -> mission aborted
+    auto_grace_sec: 3.0        # after the AUTO request, AUTO may take this long to turn on
+    at_stop_radius: 4.0        # at start: already this close to a stop -> that stop counts as reached
+
 # ---------------------------------------------------------------- radar driver (umrr_ros2_driver, live --radar)
 # No node of this name runs: it is read by umrr_ros2_driver/launch/radar.launch.py (the ros__parameters
 # wrapper is needed because ROS parses every top-level key of this file). Pick the radar hardware with

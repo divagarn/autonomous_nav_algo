@@ -29,6 +29,10 @@ buggy - PCD + Lanelet2 localisation, routing and AUTO driving for the buggy
   ./buggy add-map NAME FILE.osm [--pcd FILE.pcd]    create a map folder from a Vector Map Builder export
   ./buggy sim-map [--save]                   record a PCD of the Gazebo world (then --save)
   ./buggy params-check [FILE]                check config/buggy_params.yaml (or your own file) against the nodes
+  ./buggy app                                Buggy Manager window: [Waypoint Set] opens the map, click home / A / B in RViz
+  ./buggy mission list|check [MAP]           the stops of <map>/mission.yaml (home, A, B ...)
+  ./buggy mission here|pick NAME [MAP]       add a stop: the vehicle's position now / the next RViz 2D Goal Pose click
+  ./buggy mission start [N]|stop|resume|status   run the mission on a running --mission stack
   ./buggy stop                               stop a running launch cleanly (Ctrl+C also works)
   ./buggy kill [--list]                      stop EVERY ROS process (hung runs, Gazebo, RViz, bags) + DDS reset
   ./buggy ros2 ...                           any ros2 command inside this environment
@@ -48,6 +52,7 @@ live / replay options
   --no-lane      --camera without lane segmentation / lane path
   --avoid        go around an obstacle that blocks the lane for >5 s (default ON in view/sim, OFF live/replay);
                  --no-avoid turns it off
+  --mission      drive the stops of <map>/mission.yaml one after the other, wait at each (then ./buggy mission start)
   --params FILE  your own parameter YAML (only the keys you want to change); config/buggy_params.yaml holds all defaults
   --cpp          run the C++ runtime nodes (uart_writer, uart_bridge, wheel_odometry, lidar_preprocess, odom_to_twist, velodyne_static_tf, localization_manager, route_planner, avoidance_planner, segment_ground, self_hit_filter, lidar_obstacle_detector, operation_manager) from buggy_core
   --camera       camera detector (YOLOX 18 classes, + lane segmentation) fused with the radar; LiDAR obstacles get
@@ -76,7 +81,7 @@ clean_hw() {  # a leftover driver keeps the UDP/serial port open and silently st
 guard_graph() {
   [ -n "${BUGGY_FORCE:-}" ] && return 0
   local nodes
-  nodes=$(timeout 10 ros2 node list --spin-time 3 2>/dev/null | grep -vE '^/(rviz|transform_listener_impl|_ros2cli|launch_ros)' | sort -u)
+  nodes=$(timeout 10 ros2 node list --spin-time 3 2>/dev/null | grep -vE '^/(rviz|transform_listener_impl|_ros2cli|launch_ros|buggy_manager_app|mission_tool)' | sort -u)
   if [ -n "$nodes" ]; then
     echo "Other ROS nodes are already running in ROS_DOMAIN_ID=${ROS_DOMAIN_ID:-0}:"
     echo "$nodes" | sed 's/^/    /' | head -12
@@ -160,6 +165,18 @@ case "$cmd" in
       printf '%-22s lanelets: %-4s pcd: %s\n' "$n" "${lan:-?}" "${sz:-MISSING}"
     done ;;
 
+  app) exec python3 "$SCRIPTS/manager_app.py" "$@" ;;
+
+  mission)
+    sub="${1:-}"; [ $# -gt 0 ] && shift
+    case "$sub" in
+      list|check|here|pick) python3 "$SCRIPTS/mission_tool.py" "$sub" "$@" ;;
+      start) ros2 topic pub --once /mission/request std_msgs/msg/String "{data: 'start${1:+:$1}'}" >/dev/null && echo "mission start sent (./buggy mission status)" ;;
+      stop|resume) ros2 topic pub --once /mission/request std_msgs/msg/String "{data: '$sub'}" >/dev/null && echo "mission $sub sent" ;;
+      status) timeout 5 ros2 topic echo --once --field data /mission/state || echo "no /mission/state: is the stack running with --mission?" ;;
+      *) echo "usage: ./buggy mission list|check [MAP] | here|pick NAME [MAP] [--wait SEC] | start [N] | stop | resume | status"; exit 1 ;;
+    esac ;;
+
   params-check) python3 "$SCRIPTS/check_params.py" "$@" ;;
 
   add-map) python3 "$SCRIPTS/add_map.py" "$@" ;;
@@ -183,7 +200,7 @@ case "$cmd" in
     while [ $# -gt 0 ]; do
       case "$1" in
         --no-rviz) ARGS+=(rviz:=false) ;;
-        --avoid) ARGS+=(avoidance:=true) ;; --no-avoid) ARGS+=(avoidance:=false) ;; --cpp) ARGS+=(core:=cpp) ;;
+        --avoid) ARGS+=(avoidance:=true) ;; --no-avoid) ARGS+=(avoidance:=false) ;; --cpp) ARGS+=(core:=cpp) ;; --mission) ARGS+=(mission:=true) ;;
         --params) shift; [ -f "${1:-}" ] || { echo "--params needs an existing YAML file"; exit 1; }; ARGS+=("params:=$(realpath "$1")") ;;
         *:=*) ARGS+=("$1") ;;
         -*) echo "unknown option $1"; exit 1 ;;
@@ -203,7 +220,7 @@ case "$cmd" in
         --no-rviz) ARGS+=(rviz:=false) ;; --no-detector) ARGS+=(obstacle_detection:=false) ;;
         --radar) ARGS+=(radar:=true) ;; --camera) ARGS+=(camera:=true) ;;
         --tracker) ARGS+=(radar_tracker:=$2); shift ;; --overlay) ARGS+=(overlay:=true) ;; --no-lane) ARGS+=(lane:=false) ;;
-        --avoid) ARGS+=(avoidance:=true) ;; --no-avoid) ARGS+=(avoidance:=false) ;; --cpp) ARGS+=(core:=cpp) ;;
+        --avoid) ARGS+=(avoidance:=true) ;; --no-avoid) ARGS+=(avoidance:=false) ;; --cpp) ARGS+=(core:=cpp) ;; --mission) ARGS+=(mission:=true) ;;
         --params) shift; [ -f "${1:-}" ] || { echo "--params needs an existing YAML file"; exit 1; }; ARGS+=("params:=$(realpath "$1")") ;;
         *:=*) ARGS+=("$1") ;;
         -*) echo "unknown option $1"; exit 1 ;;
@@ -247,7 +264,7 @@ PY
       case "$1" in
         --radar) ARGS+=(radar:=true) ;; --camera) ARGS+=(camera:=true) ;; --no-rviz) ARGS+=(rviz:=false) ;; --init) ARGS+=("initial_pose:=$2"); shift ;;
         --tracker) ARGS+=(radar_tracker:=$2); shift ;; --overlay) ARGS+=(overlay:=true) ;; --no-lane) ARGS+=(lane:=false) ;;
-        --avoid) ARGS+=(avoidance:=true) ;; --no-avoid) ARGS+=(avoidance:=false) ;; --cpp) ARGS+=(core:=cpp) ;;
+        --avoid) ARGS+=(avoidance:=true) ;; --no-avoid) ARGS+=(avoidance:=false) ;; --cpp) ARGS+=(core:=cpp) ;; --mission) ARGS+=(mission:=true) ;;
         --params) shift; [ -f "${1:-}" ] || { echo "--params needs an existing YAML file"; exit 1; }; ARGS+=("params:=$(realpath "$1")") ;;
         *:=*) ARGS+=("$1") ;;
         -*) echo "unknown option $1"; exit 1 ;;

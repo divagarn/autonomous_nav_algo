@@ -154,6 +154,8 @@ def launch_setup(context):
             'theme': LaunchConfiguration('theme'),
             'live': 'true',
             'core': LaunchConfiguration('core'),
+            'mission': LaunchConfiguration('mission'),
+            'mission_file': LaunchConfiguration('mission_file'),
             'drive': LaunchConfiguration('drive'),
             'obstacle_detection': LaunchConfiguration('obstacle_detection'),
             'radar': LaunchConfiguration('radar'),
@@ -434,6 +436,9 @@ def generate_launch_description():
         DeclareLaunchArgument('avoidance', default_value='false',
                               description='go around an obstacle that blocks the lane for >5 s '
                                           '(leaves the lane centre; off by default on the real buggy)'),
+        DeclareLaunchArgument('mission', default_value='false',
+                              description='drive the stops of <map>/mission.yaml with a wait at each (./buggy mission start)'),
+        DeclareLaunchArgument('mission_file', default_value='', description='empty = <map folder>/mission.yaml'),
         DeclareLaunchArgument('radar', default_value='false',
                               description='sensor_fusion radar obstacles (hardware: umrr driver on CAN, Orin; '
                                           'replay: the bag radar; Gazebo: radar_sim)'),
