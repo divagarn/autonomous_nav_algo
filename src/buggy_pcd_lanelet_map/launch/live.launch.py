@@ -93,6 +93,10 @@ def _fusion(context, sim, replay, gz, radar, camera, bag_path):
         # Gazebo: radar_sim publishes base_link -> umrr itself and has no Doppler
         'publish_radar_tf': str(not gz).lower(), 'use_doppler': str(not gz).lower(),
         'ego_speed_source': 'odom' if gz else 'radar_doppler',
+        # fusion_pipeline's max_range is the final object list range; without it the include inherits
+        # this launch's LiDAR max_range (empty = from the YAML) and sensor_fusion / fusion_visualization
+        # die on the string parameter
+        'max_range': '40.0',
     }
     if orin:
         args.update(detector_backend='tensorrt', lane_backend='tensorrt')

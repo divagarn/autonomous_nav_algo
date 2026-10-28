@@ -435,6 +435,19 @@ refused, or when AUTO drops to stop on the way for `abort_stop_sec` (operator ST
 
 The app needs a desktop (Tk) and the ROS environment (`./buggy app` sets it). Test: `python3 -m pytest src/buggy_pcd_lanelet_map/test`.
 
+### Camera views panel (RViz)
+
+The **Camera Views** panel (RViz window, dockable; nothing is shown and nothing subscribed until you press a button)
+has three toggle buttons - press the active one again to hide it:
+
+| Button | Topic | Shows |
+|---|---|---|
+| Camera feed | `/object_detection/image_rect` | the plain rectified camera image (`--camera`) |
+| Camera overlay feed | `/fusion_visualization/overlay` | boxes, lane mask and path drawn on the image (`--camera --overlay`) |
+| Lane path curvature | `/sensor_fusion/lane_path` | top view of the tracked lane path (x forward) and its curvature near / mid / far (1/m, radius, left/right), the steering that follows it (+right, like `/steering_angle`) and the tightest point (red when tighter than the buggy's 4.4 m minimum radius) |
+
+Without data it says which option to start with (e.g. "no data on ... (start with --camera --overlay)").
+
 ## 4. Brake calibration
 
 ```bash

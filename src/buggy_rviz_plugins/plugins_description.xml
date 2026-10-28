@@ -4,6 +4,11 @@
          base_class_type="rviz_common::Panel">
     <description>Vehicle pose, route status and clear-route button.</description>
   </class>
+  <class name="buggy_rviz_plugins/CameraViewPanel"
+         type="buggy_rviz_plugins::CameraViewPanel"
+         base_class_type="rviz_common::Panel">
+    <description>Camera feed, camera overlay feed and lane path curvature (hidden until a button is pressed).</description>
+  </class>
   <class name="buggy_rviz_plugins/AddCarTool" type="buggy_rviz_plugins::AddCarTool"
          base_class_type="rviz_common::Tool">
     <description>Click-drag on the map to add a dummy car.</description>

@@ -8,6 +8,9 @@ Panels:
         - /Planning1
   - Class: buggy_rviz_plugins/BuggyStatePanel
     Name: Buggy State
+  # camera views (hidden until a button is pressed): Camera feed / Camera overlay feed / Lane path curvature
+  - Class: buggy_rviz_plugins/CameraViewPanel
+    Name: Camera Views
   - Class: rviz_common/Tool Properties
     Name: Tool Properties
   - Class: rviz_common/Views
@@ -129,8 +132,9 @@ Visualization Manager:
           Enabled: true
           Topic:
             Value: /perception/lidar_objects_marker
+        # sensor_fusion objects as the AUTO logic sees them (radar_object_bridge: orange boxes)
         - Class: rviz_default_plugins/MarkerArray
-          Name: Radar Objects
+          Name: Radar Objects (sensor_fusion -> AUTO)
           Enabled: true
           Topic:
             Value: /perception/radar_objects_marker
@@ -139,12 +143,29 @@ Visualization Manager:
           Enabled: true
           Topic:
             Value: /perception/objects_marker
-        # sensor_fusion (--radar / --camera): fused tracks + camera lane / road edges + tracked path (map)
+    # sensor_fusion (--radar / --camera), one display per topic
+    - Class: rviz_common/Group
+      Name: Sensor Fusion
+      Enabled: true
+      Displays:
+        # fused tracks + ego path + stop zone + camera lane markings / road edges / tracked path, in map
+        # (needs map -> base_link: localised)
         - Class: rviz_default_plugins/MarkerArray
-          Name: Fusion (tracks, lane)
+          Name: Fused Objects + Lane (map)
           Enabled: true
           Topic:
             Value: /fusion_visualization/markers
+        - Class: rviz_default_plugins/MarkerArray
+          Name: Fused Objects, moving / in path only
+          Enabled: false
+          Topic:
+            Value: /fusion_visualization/markers_relevant
+        # the same lane / road edges / path in base_link: shown also when NDT is not localised
+        - Class: rviz_default_plugins/MarkerArray
+          Name: Lane + Road Edges (base_link)
+          Enabled: false
+          Topic:
+            Value: /fusion_visualization/lane_markers_base
         - Class: rviz_default_plugins/Path
           Name: Lane Path (camera, 20 m)
           Enabled: true
@@ -153,6 +174,28 @@ Visualization Manager:
           Color: 0; 220; 120
           Line Style: Billboards
           Line Width: 0.08
+        # camera image with fused boxes, lane mask and path drawn on it: only with --overlay
+        - Class: rviz_default_plugins/Image
+          Name: Camera Overlay (--overlay)
+          Enabled: false              # the Camera Views panel shows it on a button
+          Topic:
+            Value: /fusion_visualization/overlay
+            Depth: 1
+            History Policy: Keep Last
+            Reliability Policy: Best Effort
+            Durability Policy: Volatile
+          Normalize Range: true
+        # plain rectified camera image of the detector (no drawing; works without --overlay)
+        - Class: rviz_default_plugins/Image
+          Name: Camera (rectified)
+          Enabled: false
+          Topic:
+            Value: /object_detection/image_rect
+            Depth: 1
+            History Policy: Keep Last
+            Reliability Policy: Best Effort
+            Durability Policy: Volatile
+          Normalize Range: true
   Tools:
     - Class: rviz_default_plugins/MoveCamera
     - Class: rviz_default_plugins/Select

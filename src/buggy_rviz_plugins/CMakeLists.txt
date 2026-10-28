@@ -12,6 +12,8 @@ find_package(rviz_default_plugins REQUIRED)
 find_package(pluginlib REQUIRED)
 find_package(geometry_msgs REQUIRED)
 find_package(std_msgs REQUIRED)
+find_package(sensor_msgs REQUIRED)
+find_package(nav_msgs REQUIRED)
 find_package(Qt5 REQUIRED COMPONENTS Widgets)
 
 set(CMAKE_AUTOMOC ON)
@@ -20,13 +22,15 @@ set(CMAKE_CXX_STANDARD 17)
 add_library(${PROJECT_NAME} SHARED
   src/buggy_state_panel.cpp
   src/dummy_object_tools.cpp
-  include/${PROJECT_NAME}/buggy_state_panel.hpp)
+  src/camera_view_panel.cpp
+  include/${PROJECT_NAME}/buggy_state_panel.hpp
+  include/${PROJECT_NAME}/camera_view_panel.hpp)
 target_include_directories(${PROJECT_NAME} PUBLIC
   $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
   $<INSTALL_INTERFACE:include>)
 target_link_libraries(${PROJECT_NAME} PUBLIC Qt5::Widgets)
 ament_target_dependencies(${PROJECT_NAME} PUBLIC
-  rclcpp rviz_common rviz_default_plugins pluginlib geometry_msgs std_msgs)
+  rclcpp rviz_common rviz_default_plugins pluginlib geometry_msgs std_msgs sensor_msgs nav_msgs)
 
 pluginlib_export_plugin_description_file(rviz_common plugins_description.xml)
 
