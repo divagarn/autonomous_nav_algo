@@ -13,6 +13,10 @@ The second tab, "Build map from bag", makes a PCD map from a recorded LiDAR bag 
 pick the bag folder, choose "Without GNSS" (LiDAR only) or "With GNSS" (the bag also has /chcnav/devpvt: adds the
 map's latitude/longitude + heading and a drift check), press [Build map].
 
+The third tab, "Record bag", records a rosbag2 from the live hardware into a folder you choose (it can also start
+the sensor drivers itself: LiDAR, ECU feedback READ-ONLY, GNSS; nothing writes to the ECU). Such a bag is what
+"Build map from bag" and ./buggy replay read.
+
 The ROS side is optional for the window: without it the stops can still be listed, reordered and deleted.
 """
 import math
@@ -74,6 +78,60 @@ def build_command(bag, out, gnss, rviz, max_scans=0, closure=True):
     if max_scans:
         cmd += ['--max-scans', str(int(max_scans))]
     return cmd
+
+
+# what a bag recorded for mapping / replay holds: (topic, label, ticked by default)
+RECORD_TOPICS = [
+    ('/velodyne_points', 'LiDAR points', True),
+    ('/tf_static', 'static TF (LiDAR mounting)', True),
+    ('/wheel_uart', 'wheel speed / steering feedback (ECU)', True),
+    ('/chcnav/devpvt', 'GNSS (needed for a georeferenced map)', True),
+    ('/chcnav/imu', 'GNSS IMU', False),
+    ('/smart_radar/can_targets_0', 'radar targets', False),
+    ('/smart_radar/can_targetheader_0', 'radar header', False),
+    ('/camera/image_raw', 'camera image (large files)', False),
+]
+
+
+def default_bag_name():
+    return time.strftime('bag_%Y%m%d_%H%M%S')
+
+
+def record_target(folder, name):
+    """(path, error) of the bag folder to create: ros2 bag record refuses an existing folder."""
+    name, folder = (name or '').strip(), (folder or '').strip()
+    if not folder or not name:
+        return '', 'choose the folder to save into and a bag name'
+    folder = os.path.abspath(os.path.expanduser(folder))
+    if '/' in name or name in ('.', '..'):
+        return '', 'the bag name is a single folder name (no "/")'
+    path = os.path.join(folder, name)
+    if os.path.exists(path):
+        return path, f'{path} exists already: choose another bag name'
+    if os.path.exists(folder) and not os.access(folder, os.W_OK):
+        return path, f'cannot write into {folder}'
+    return path, ''
+
+
+def record_command(path, topics):
+    return ['ros2', 'bag', 'record', '-o', path] + list(topics)
+
+
+def sensors_command(gnss=True, wheel=True, gnss_udp_port=7531):
+    return ['ros2', 'launch', 'buggy_pcd_lanelet_map', 'record_sensors.launch.py',
+            f'gnss:={str(bool(gnss)).lower()}', f'wheel:={str(bool(wheel)).lower()}',
+            f'gnss_udp_port:={int(gnss_udp_port)}']
+
+
+def folder_bytes(path):
+    total = 0
+    for root_, _, files in os.walk(path):
+        for f in files:
+            try:
+                total += os.path.getsize(os.path.join(root_, f))
+            except OSError:
+                pass
+    return total
 
 
 class Editor:
@@ -233,6 +291,37 @@ class BuildProcess:
                 pass
 
 
+class ChildProcess:
+    """A command as a child process in its own process group; output lines go to a queue; stop() = Ctrl+C
+    (a bag recorder closes and writes its metadata.yaml on SIGINT), then SIGTERM, then SIGKILL."""
+
+    def __init__(self, cmd, lines, tag):
+        self.tag = tag
+        self.proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True,
+                                     start_new_session=True)
+        threading.Thread(target=self._read, args=(lines,), daemon=True).start()
+
+    def _read(self, lines):
+        for line in self.proc.stdout:
+            lines.put(f'[{self.tag}] {line.rstrip()}')
+        lines.put(f'[{self.tag} ended, exit code {self.proc.wait()}]')
+
+    def alive(self):
+        return self.proc.poll() is None
+
+    def stop(self, int_wait=15):
+        for sig, wait in ((signal.SIGINT, int_wait), (signal.SIGTERM, 4), (signal.SIGKILL, 2)):
+            if not self.alive():
+                return
+            try:
+                os.killpg(self.proc.pid, sig)
+            except ProcessLookupError:
+                return
+            t = time.time() + wait
+            while time.time() < t and self.alive():
+                time.sleep(0.2)
+
+
 class MapProcess:
     """`./buggy view MAP` as a child process (own process group, stopped with Ctrl+C semantics)."""
 
@@ -303,6 +392,8 @@ def run_gui():
     tab_map = ttk.Frame(nb)
     nb.add(tab_wp, text='  Waypoints  ')
     nb.add(tab_map, text='  Build map from bag  ')
+    tab_rec = ttk.Frame(nb)
+    nb.add(tab_rec, text='  Record bag  ')
 
     top = ttk.Frame(tab_wp)
     top.pack(fill='x', padx=14, pady=10)
@@ -491,6 +582,162 @@ def run_gui():
             pass
         root.after(200, poll_build)
 
+
+    # ---- tab 3: record a bag from the live hardware ----------------------------------------------------
+    rlines = queue.Queue()
+    rstate = {'bag': None, 'sensors': None, 'path': '', 't0': 0.0, 'last_size': 0, 'warned': False, 'starting': False}
+    rec_folder_var = tk.StringVar(value=os.path.expanduser('~/bags'))
+    rec_name_var = tk.StringVar(value=default_bag_name())
+    rec_sensors_var = tk.BooleanVar(value=True)
+    rec_topic_vars = {t: tk.BooleanVar(value=on) for t, _, on in RECORD_TOPICS}
+    rec_path_var, rec_status = tk.StringVar(value=''), tk.StringVar(value='')
+
+    q1 = ttk.Frame(tab_rec)
+    q1.pack(fill='x', padx=14, pady=(12, 4))
+    ttk.Label(q1, text='Save into', width=14).pack(side='left')
+    ttk.Entry(q1, textvariable=rec_folder_var).pack(side='left', fill='x', expand=True, padx=6)
+    ttk.Button(q1, text='Browse...', command=lambda: browse_rec()).pack(side='left')
+    q2 = ttk.Frame(tab_rec)
+    q2.pack(fill='x', padx=14, pady=4)
+    ttk.Label(q2, text='Bag name', width=14).pack(side='left')
+    ttk.Entry(q2, textvariable=rec_name_var).pack(side='left', fill='x', expand=True, padx=6)
+    ttk.Button(q2, text='New name', command=lambda: rec_name_var.set(default_bag_name())).pack(side='left')
+    ttk.Label(tab_rec, textvariable=rec_path_var, wraplength=940).pack(fill='x', padx=14, pady=2)
+    q3 = ttk.Frame(tab_rec)
+    q3.pack(fill='x', padx=14, pady=4)
+    ttk.Label(q3, text='Topics', width=14).pack(side='left', anchor='n')
+    topics_col = ttk.Frame(q3)
+    topics_col.pack(side='left', padx=6)
+    for t, label, _ in RECORD_TOPICS:
+        ttk.Checkbutton(topics_col, text=f'{t}   ({label})', variable=rec_topic_vars[t]).pack(anchor='w')
+    q4 = ttk.Frame(tab_rec)
+    q4.pack(fill='x', padx=14, pady=4)
+    ttk.Label(q4, text='Sensors', width=14).pack(side='left')
+    ttk.Checkbutton(q4, text='Start the sensor drivers too (LiDAR, ECU feedback read-only, GNSS). '
+                    'Untick if ./buggy live (or another driver launch) is already running',
+                    variable=rec_sensors_var).pack(side='left', padx=6)
+    q5 = ttk.Frame(tab_rec)
+    q5.pack(fill='x', padx=14, pady=8)
+    rec_btn = ttk.Button(q5, text='Start recording', style='Big.TButton')
+    rec_btn.pack(side='left')
+    rec_stop_btn = ttk.Button(q5, text='Stop recording', style='Big.TButton')
+    rec_stop_btn.pack(side='left', padx=8)
+    rec_open_btn = ttk.Button(q5, text='Open folder')
+    rec_open_btn.pack(side='left')
+    ttk.Label(tab_rec, textvariable=rec_status, wraplength=940).pack(fill='x', padx=14)
+    rlog = tk.Text(tab_rec, height=10, bg='#101A40', fg='#cfd8ff', insertbackground='white')
+    rlog.pack(fill='both', expand=True, padx=14, pady=(4, 10))
+    rec_stop_btn.state(['disabled'])
+
+    def rec_update_path(*_):
+        path, err = record_target(rec_folder_var.get(), rec_name_var.get())
+        rec_path_var.set(('Bag folder: ' + path) + (f'    ({err})' if err else ''))
+
+    def browse_rec():
+        d = filedialog.askdirectory(initialdir=os.path.expanduser(rec_folder_var.get() or '~'), title='Save the bag into')
+        if d:
+            rec_folder_var.set(d)
+
+    def recording():
+        return bool(rstate['bag'] and rstate['bag'].alive())
+
+    def start_record_bag():
+        topics = [t for t, _, _ in RECORD_TOPICS if rec_topic_vars[t].get()]
+        rstate['bag'] = ChildProcess(record_command(rstate['path'], topics), rlines, 'bag')
+        rstate.update(t0=time.time(), last_size=0, warned=False, starting=False)
+        rec_status.set(f'Recording {len(topics)} topics into {rstate["path"]} ...')
+        rec_stop_btn.state(['!disabled'])
+
+    def after_sensors():
+        if rstate['starting'] and rstate['sensors'] and rstate['sensors'].alive():
+            start_record_bag()
+        else:
+            rstate['starting'] = False
+            rec_btn.state(['!disabled'])
+            rec_status.set('The sensor drivers did not start (or recording was cancelled): see the log.')
+
+    def start_record():
+        if recording() or rstate['starting']:
+            return
+        path, err = record_target(rec_folder_var.get(), rec_name_var.get())
+        topics = [t for t, _, _ in RECORD_TOPICS if rec_topic_vars[t].get()]
+        if err:
+            rec_status.set('Cannot record: ' + err)
+            return
+        if not topics:
+            rec_status.set('Cannot record: tick at least one topic.')
+            return
+        try:
+            os.makedirs(os.path.dirname(path), exist_ok=True)
+        except OSError as e:
+            rec_status.set(f'Cannot create the folder: {e}')
+            return
+        rlog.delete('1.0', 'end')
+        rstate.update(path=path, starting=True)
+        rec_btn.state(['disabled'])
+        if rec_sensors_var.get():
+            gnss, wheel = rec_topic_vars['/chcnav/devpvt'].get(), rec_topic_vars['/wheel_uart'].get()
+            rstate['sensors'] = ChildProcess(sensors_command(gnss, wheel), rlines, 'sensors')
+            rec_status.set('Starting the sensor drivers ... (the bag starts in 8 s)')
+            root.after(8000, after_sensors)
+        else:
+            start_record_bag()
+
+    def stop_record():
+        rstate['starting'] = False
+        rec_status.set('Stopping: closing the bag ...')
+        rec_stop_btn.state(['disabled'])
+
+        def work():
+            for p in (rstate['bag'], rstate['sensors']):
+                if p and p.alive():
+                    p.stop()
+            rlines.put('[record stopped]')
+        threading.Thread(target=work, daemon=True).start()
+
+    def open_rec_folder():
+        d = rstate['path'] or rec_folder_var.get()
+        d = d if os.path.isdir(d) else os.path.dirname(d)
+        if d and os.path.isdir(d):
+            subprocess.Popen(['xdg-open', d], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+
+    for v in (rec_folder_var, rec_name_var):
+        v.trace_add('write', rec_update_path)
+    rec_btn.configure(command=start_record)
+    rec_stop_btn.configure(command=stop_record)
+    rec_open_btn.configure(command=open_rec_folder)
+    rec_update_path()
+
+    def poll_record():
+        try:
+            while True:
+                line = rlines.get_nowait()
+                rlog.insert('end', line + '\n')
+                rlog.see('end')
+                if line == '[record stopped]':
+                    info = bag_info(rstate['path'])
+                    rec_btn.state(['!disabled'])
+                    rec_name_var.set(default_bag_name())
+                    rec_status.set(
+                        f'Saved: {rstate["path"]}  ({time.time() - rstate["t0"]:.0f} s, {info["lidar"]} LiDAR scans, '
+                        f'GNSS messages: {info["gnss"]}). Next: Build map from bag.' if info['ok'] else
+                        f'Stopped. Bag: {rstate["path"]} - ' + (info['error'] or 'check the log'))
+                elif line.startswith('[bag ended') and rstate['bag'] and not rstate['bag'].alive() and rec_stop_btn.instate(['!disabled']):
+                    rec_status.set('The recorder ended on its own (see the log).')
+                    rec_btn.state(['!disabled'])
+                    rec_stop_btn.state(['disabled'])
+        except queue.Empty:
+            pass
+        if recording():
+            size = folder_bytes(rstate['path']) if os.path.isdir(rstate['path']) else 0
+            secs = time.time() - rstate['t0']
+            msg = f'Recording ... {secs:.0f} s, {size / 1e6:.1f} MB  ->  {rstate["path"]}'
+            if secs > 8 and size == rstate['last_size'] == 0 and not rstate['warned']:
+                msg += '   (nothing written yet: are the sensors publishing?)'
+            rec_status.set(msg)
+            rstate['last_size'] = size
+        root.after(1000, poll_record)
+
     ros = RosLink(lambda src, x, y: clicks.put((src, x, y)), lambda: list(state['editor'].stops()) if state['editor'] else [])
 
     def ed():
@@ -621,6 +868,12 @@ def run_gui():
             if not messagebox.askyesno('Buggy Manager', 'A map build is running. Stop it and quit?'):
                 return
             bstate['proc'].stop()
+        if recording() or (rstate['sensors'] and rstate['sensors'].alive()):
+            if not messagebox.askyesno('Buggy Manager', 'A bag is being recorded. Stop and save it, then quit?'):
+                return
+            for p in (rstate['bag'], rstate['sensors']):
+                if p and p.alive():
+                    p.stop()
         if state['proc'] and state['proc'].alive():
             if not messagebox.askyesno('Buggy Manager', 'The map is still open. Close it and quit?'):
                 return
@@ -630,6 +883,7 @@ def run_gui():
     root.protocol('WM_DELETE_WINDOW', on_close)
     poll()
     poll_build()
+    poll_record()
     root.mainloop()
 
 

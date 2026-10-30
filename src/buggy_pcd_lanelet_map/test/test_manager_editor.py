@@ -86,3 +86,30 @@ def test_build_command_options():
     assert c[2:] == ['/b/bag', '/o/out', '--gnss', '--no-rviz', '--max-scans', '250']
     assert manager_app.build_command('/b/bag', '', False, True)[2:] == ['/b/bag']
     assert manager_app.build_command('/b/bag', '', False, True, 0, False)[2:] == ['/b/bag', '--no-closure']
+
+
+def test_record_target_refuses_existing_and_bad_names(tmp_path):
+    path, err = manager_app.record_target(str(tmp_path), 'bag_1')
+    assert not err and path == str(tmp_path / 'bag_1')
+    (tmp_path / 'bag_1').mkdir()
+    assert 'exists already' in manager_app.record_target(str(tmp_path), 'bag_1')[1]
+    assert manager_app.record_target(str(tmp_path), 'a/b')[1]
+    assert manager_app.record_target('', 'x')[1] and manager_app.record_target(str(tmp_path), '  ')[1]
+    # a folder that does not exist yet is fine: the app creates it
+    assert not manager_app.record_target(str(tmp_path / 'new' / 'dir'), 'b')[1]
+
+
+def test_record_commands():
+    assert manager_app.record_command('/x/b', ['/velodyne_points', '/chcnav/devpvt']) == \
+        ['ros2', 'bag', 'record', '-o', '/x/b', '/velodyne_points', '/chcnav/devpvt']
+    cmd = manager_app.sensors_command(gnss=False, wheel=True, gnss_udp_port=7600)
+    assert 'gnss:=false' in cmd and 'wheel:=true' in cmd and 'gnss_udp_port:=7600' in cmd
+    defaults = {t for t, _, on in manager_app.RECORD_TOPICS if on}
+    assert {'/velodyne_points', '/tf_static', '/wheel_uart', '/chcnav/devpvt'} <= defaults
+    assert '/camera/image_raw' not in defaults
+
+
+def test_folder_bytes(tmp_path):
+    (tmp_path / 'a').write_bytes(b'x' * 100)
+    (tmp_path / 'd').mkdir(); (tmp_path / 'd' / 'b').write_bytes(b'y' * 50)
+    assert manager_app.folder_bytes(str(tmp_path)) == 150
