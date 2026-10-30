@@ -41,6 +41,7 @@ PY = {
 CPP = {
     'operation_manager': 'buggy_core/src/control/operation_manager_node.cpp',
     'mission_manager': 'buggy_core/src/control/mission_manager_node.cpp',
+    'gnss_pose_initializer': 'buggy_core/src/localization/gnss_pose_initializer_node.cpp',
     'route_planner': 'buggy_core/src/planning/route_planner_node.cpp',
     'avoidance_planner': 'buggy_core/src/planning/avoidance_planner_node.cpp',
     'lidar_obstacle_detector': 'buggy_core/src/perception/lidar_obstacle_detector_node.cpp',
@@ -100,7 +101,7 @@ def py_declarations(path):
 def cpp_declarations(path):
     text = open(path).read()
     out = {}
-    for m in re.finditer(r'declare_parameter<([\w:]+)>\(\s*"(\w+)"\s*,', text):
+    for m in re.finditer(r'declare_parameter<([\w:<>]+)>\(\s*"(\w+)"\s*,', text):
         i, depth, j = m.end(), 1, m.end()
         while depth and j < len(text):
             depth += (text[j] == '(') - (text[j] == ')')

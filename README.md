@@ -448,6 +448,87 @@ has three toggle buttons - press the active one again to hide it:
 
 Without data it says which option to start with (e.g. "no data on ... (start with --camera --overlay)").
 
+## 3e. Build a PCD map from a recorded bag (`tools/mapping`)
+
+The same pipeline as `divagar_test1_ws/scripts/build_map_from_bag.sh`, now inside this folder:
+KISS-ICP odometry over every scan -> poses flattened (the buggy drives on level ground) -> loop closure
+(last scans onto the first) -> `*_map_flat.pcd`, a trajectory CSV and a PNG report. The first run creates
+`~/.venvs/kiss_icp` (`pip install kiss-icp`, needs internet once).
+
+```bash
+./buggy map-from-bag /home/divagar/bags/new_delhi_bag_3                 # LiDAR only, output ~/maps/<bag name>
+./buggy map-from-bag BAG OUT_DIR --gnss --no-rviz                        # bag with /chcnav/devpvt, no RViz at the end
+```
+
+| Option | |
+|---|---|
+| (none) | **Without GNSS**: the map is built from the LiDAR only |
+| `--gnss` | **With GNSS** (the bag has `/chcnav/devpvt`; ignored with a warning if it has not): after the map, fits the trajectory to the GNSS track and writes `<name>_gps_origin.yaml` (latitude / longitude of the map origin, heading of the map's +x axis clockwise from north, GNSS quality) and `<name>_gnss_check.png`. The fit is also a **drift check**: `scale` far from 1 or an RMS of metres means the LiDAR odometry drifted. The PCD itself is not changed. |
+| `--no-closure` | no loop closure: the drive does not return to where it started (A -> B) |
+| `--no-rviz` | do not open RViz at the end (it shows the map on `/flat_map` until Ctrl+C) |
+| `--max-scans N` | only the first N scans (quick test) |
+
+The **Buggy Manager app** (`./buggy app`, tab **Build map from bag**) does the same with the mouse: pick the bag folder
+(it shows the duration, the number of LiDAR scans and whether the bag has GNSS), choose **Without GNSS** or **With GNSS**
+(only enabled when the bag has `/chcnav/devpvt`), press **Build map**; the log shows the steps.
+
+Then: draw the lanes on the PCD in Vector Map Builder and `./buggy add-map NAME FILE.osm --pcd OUT/NAME_map_flat.pcd`.
+Notes: the map frame starts at the LiDAR pose of the first scan with +x along the buggy's heading (rear axle about 1.73 m behind,
+so use roughly `--init -1.73,0,0` at the start spot); drive slowly and end where you started so the loop closure has something to
+close; with GNSS, RTK fixed gives a metre-accurate georeference, without RTK it is only approximate (the yaml says which).
+**Real lat/lon in the lanelet map (optional):** `python3 tools/mapping/georeference_pcd.py OUT/NAME_map_flat.pcd OUT/NAME_gps_origin.yaml -o OUT/NAME_enu.pcd`
+rotates the cloud so +x = East, +y = North and writes `NAME_enu_projector_info.yaml` (`LocalCartesian`, `map_origin` = the map origin's
+latitude / longitude). Load `NAME_enu.pcd` in Vector Map Builder with that projection instead of the plain `Local` one. `./buggy add-map`
+only understands exports with `local_x` / `local_y` tags (the `Local` flow) so far.
+Nothing in the runtime uses the georeference yet (`latlon_to_map()` in `tools/mapping/gnss_georef.py` converts a fix to map x, y;
+auto start pose is the next step). Tests: `python3 -m pytest tools/mapping src/buggy_pcd_lanelet_map/test`.
+
+## 3f. Automatic localization with GNSS (the Autoware way)
+
+No click: the GNSS position + heading (`/chcnav/devpvt`) is turned into a pose in the map frame through the map projection and sent
+to `/initialpose`; the `localization_manager` lets NDT refine it and starts the EKF. This is what Autoware's `gnss_poser` +
+`pose_initializer` do. It needs a **georeferenced map** (`map_projector_info.yaml` = `LocalCartesian`, point cloud and lanelet map
+in the same East/North frame) and an **RTK fixed fix with dual-antenna heading**.
+
+| # | Step | Command / action |
+|---|---|---|
+| 1 | Record a bag with LiDAR + GNSS, drive the lane slowly | `ros2 bag record -o ~/bags/NAME /velodyne_points /wheel_uart /chcnav/devpvt` (RTK fixed all the time) |
+| 2 | Build the PCD **with GNSS** | `./buggy map-from-bag ~/bags/NAME --gnss` (add `--no-closure` when the drive does not return to its start). Read the output: `RTK fixed 100 %`, `agreement RMS` below ~0.5 m, `scale` ~1.0, and **`GNSS heading vs LiDAR heading: offset`** |
+| 3 | Rotate the PCD to East / North | `python3 tools/mapping/georeference_pcd.py ~/maps/NAME/NAME_map_flat.pcd ~/maps/NAME/NAME_gps_origin.yaml -o ~/maps/NAME/NAME_enu.pcd` (also writes `NAME_enu_projector_info.yaml`) |
+| 4 | Draw the lanes in Vector Map Builder (browser, TIER IV account) | **File > Import PCD** `NAME_enu.pcd`; **Create > Create Lanelet2Maps**; draw with **Lanelet2Maps > Lanelet** (click points, Join Lanelets); **File > Export Lanelet2Maps**. Projection: choose **LocalCartesian** with the `map_origin` of `NAME_enu_projector_info.yaml` if the dialog offers it - otherwise draw with the `Local` projector as always: the cloud is already East/North, step 5 adds the latitude / longitude |
+| 5 | Make the map folder (adds lat/lon to a `Local` export; replaces the lat/lon of an export whose Vector Map Builder origin differs from ours - the lanes always stay where they were drawn on the cloud, `local_x`/`local_y` win) | `./buggy add-map NAME lanelet.osm --pcd ~/maps/NAME/NAME_enu.pcd --projector ~/maps/NAME/NAME_enu_projector_info.yaml` |
+| 6 | Check it on the bag | `./buggy replay ~/bags/NAME NAME --gnss` - the log shows `GNSS start pose -> /initialpose`, then the Localization row goes `aligning -> initialized -> converged`, no click |
+| 7 | On the buggy | CHCNAV device sending UDP to the laptop (port 7531): `./buggy live NAME --cpp --gnss` (`gnss_udp_port:=7531`) |
+
+**Set the two offsets from your own data** (step 2 prints both lines; already set for this buggy from `t1`) (`config/buggy_params.yaml`, `gnss_pose_initializer`):
+* `heading_offset_deg` = the `offset` printed in step 2 (near 0: the heading is right; 180: the antennas are the wrong way round);
+* `gnss_to_rear_axle_x/y` = where the GNSS position is relative to the rear axle (vehicle frame, x forward): the map frame is
+  the **rear axle** (`base_link`). NDT refines a few metres of error, but the heading should be within about 10 degrees.
+
+**In RViz** (Buggy panel, box **GNSS auto start pose**, shown with `--gnss`): a coloured dot and the fix (`RTK fixed (4)  std 0.03 m  heading 134 deg`),
+the initializer's status line (what it is waiting for / `sent GNSS start pose` / `localized`), and the button **GNSS auto-localize: ON / OFF**.
+Dot: green = a start pose would be sent now, yellow = GNSS present but not good enough (e.g. RTK float), red = no GNSS message, grey = switched off or not running.
+OFF = it never sends a pose (use 2D Pose Estimate); ON again = the fix must be stable for `stable_sec` first. The same from a terminal:
+`./buggy ros2 topic pub --once /gnss_init/request std_msgs/msg/String "{data: disable}"` (`enable`, `toggle`). Start it switched off with the parameter
+`gnss_pose_initializer.enabled: false`.
+
+What it needs to send a pose: `devpvt.stat[1]` in `accepted_states` (default `[4]` = RTK fixed with heading; 5 = float), position
+std <= `max_std_m`, the fix good for `stable_sec` without a break, localization not running (uninitialized, or lost for `lost_sec`),
+at most `max_attempts` poses per attempt (then click 2D Pose Estimate as before). `/gnss_init/state` shows what it is waiting for.
+A `Local` map (all maps so far) cannot be used: `--gnss` says so and is ignored.
+
+Supported projections: `Local` and `LocalCartesian` (the lane loaders compute x, y from lat/lon like Autoware's projector); MGRS /
+LocalCartesianUTM / TransverseMercator are refused with a clear message.
+
+Tested twice: (1) made-up GNSS with a known transform on a recorded bag; (2) the real bag `t1` (RTK, 282 s): the map built with `--gnss`,
+rotated, a stand-in lanelet made from the trajectory (lat/lon only), `./buggy replay t1 MAP --gnss`: the initializer waited while the
+receiver was in RTK float (state 5, the first ~30 s), sent the start pose 3 s after RTK fixed, NDT `converged` (score 3.2) 3 s later, no click.
+Step 2 on `t1` printed: RTK fixed 82 %, GNSS vs LiDAR RMS 0.68 m (0.10 m once the GNSS lever arm is applied), heading offset -3.24 deg
+(spread 0.2 deg), the GNSS position about 0.3 m behind the rear axle - these are the values now in `config/buggy_params.yaml`.
+**Not tested:** the live UDP driver chain on the buggy and the Vector Map Builder LocalCartesian dialog.
+With RTK float (state 5) at power-on the start waits for RTK fixed (about 30 s with a clear sky view on `t1`); `accepted_states: [4, 5]`
+would start earlier but with metres of position error (float std median 0.26 m, 95 % below 1.8 m).
+
 ## 4. Brake calibration
 
 ```bash

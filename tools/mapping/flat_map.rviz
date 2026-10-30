@@ -1,0 +1,47 @@
+Panels: []
+Visualization Manager:
+  Class: ""
+  Displays:
+    - Class: rviz_default_plugins/Grid
+      Name: Grid
+      Enabled: true
+      Cell Size: 10
+      Plane Cell Count: 20
+    - Class: rviz_default_plugins/PointCloud2
+      Name: Flat map
+      Enabled: true
+      Topic:
+        Value: /flat_map
+        Depth: 1
+        Durability Policy: Transient Local
+        Reliability Policy: Reliable
+        History Policy: Keep Last
+      Style: Points
+      Size (Pixels): 2
+      Color Transformer: AxisColor
+      Axis: Z
+      Use Fixed Frame: true
+      Use rainbow: true
+      Autocompute Value Bounds: false
+      Min Value: -0.5
+      Max Value: 6.0
+      Invert Rainbow: false
+  Global Options:
+    Fixed Frame: map
+    Background Color: 30; 30; 30
+    Frame Rate: 30
+  Tools:
+    - Class: rviz_default_plugins/MoveCamera
+  Views:
+    Current:
+      Class: rviz_default_plugins/Orbit
+      Distance: 160
+      Pitch: 1.2
+      Yaw: 3.0
+      Focal Point:
+        X: -10
+        Y: 40
+        Z: 0
+Window Geometry:
+  Height: 900
+  Width: 1500

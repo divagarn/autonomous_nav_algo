@@ -9,6 +9,10 @@
      the point is stored in <map>/mission.yaml at once and shown in RViz (/mission/markers)
   3. close the map; drive the stops with   ./buggy live|view MAP --mission   then   ./buggy mission start
 
+The second tab, "Build map from bag", makes a PCD map from a recorded LiDAR bag (tools/mapping/build_map_from_bag.sh):
+pick the bag folder, choose "Without GNSS" (LiDAR only) or "With GNSS" (the bag also has /chcnav/devpvt: adds the
+map's latitude/longitude + heading and a drift check), press [Build map].
+
 The ROS side is optional for the window: without it the stops can still be listed, reordered and deleted.
 """
 import math
@@ -28,6 +32,48 @@ from buggy_pcd_lanelet_map.paths import maps_dir, resolve_map  # noqa: E402
 BUGGY = os.path.abspath(os.path.join(HERE, '..', '..', '..', 'buggy'))
 BG, PANEL, ACCENT, TEXT = '#27408B', '#1E3170', '#4169E1', '#ffffff'
 SOURCES = {'initialpose': 'RViz "2D Pose Estimate"', 'goal_pose': 'RViz "2D Goal Pose"'}
+
+
+BUILD_SCRIPT = os.path.abspath(os.path.join(HERE, '..', '..', '..', 'tools', 'mapping', 'build_map_from_bag.sh'))
+GNSS_TOPIC = '/chcnav/devpvt'
+
+
+def bag_info(path):
+    """What the bag folder holds, from its metadata.yaml: {ok, error, lidar, gnss, seconds, topics}."""
+    import yaml
+    info = {'ok': False, 'error': '', 'lidar': 0, 'gnss': 0, 'seconds': 0.0, 'topics': {}}
+    meta = os.path.join(os.path.expanduser(path or ''), 'metadata.yaml')
+    if not path or not os.path.isfile(meta):
+        info['error'] = 'not a rosbag2 folder (no metadata.yaml)'
+        return info
+    try:
+        b = yaml.safe_load(open(meta))['rosbag2_bagfile_information']
+        info['topics'] = {t['topic_metadata']['name']: t['message_count'] for t in b['topics_with_message_count']}
+        info['seconds'] = b['duration']['nanoseconds'] * 1e-9
+    except Exception as e:
+        info['error'] = f'cannot read metadata.yaml: {e}'
+        return info
+    info['lidar'] = info['topics'].get('/velodyne_points', 0)
+    info['gnss'] = info['topics'].get(GNSS_TOPIC, 0)
+    info['ok'] = info['lidar'] > 0
+    if not info['ok']:
+        info['error'] = 'the bag has no /velodyne_points'
+    return info
+
+
+def build_command(bag, out, gnss, rviz, max_scans=0, closure=True):
+    cmd = ['bash', BUILD_SCRIPT, os.path.abspath(os.path.expanduser(bag))]
+    if out:
+        cmd.append(os.path.abspath(os.path.expanduser(out)))
+    if gnss:
+        cmd.append('--gnss')
+    if not closure:
+        cmd.append('--no-closure')
+    if not rviz:
+        cmd.append('--no-rviz')
+    if max_scans:
+        cmd += ['--max-scans', str(int(max_scans))]
+    return cmd
 
 
 class Editor:
@@ -163,6 +209,30 @@ class RosLink(threading.Thread):
             self.error = f'{type(e).__name__}: {e}'
 
 
+class BuildProcess:
+    """tools/mapping/build_map_from_bag.sh as a child process; its output lines go to a queue."""
+
+    def __init__(self, cmd, lines):
+        self.proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True,
+                                     start_new_session=True, cwd=os.path.dirname(BUILD_SCRIPT))
+        threading.Thread(target=self._read, args=(lines,), daemon=True).start()
+
+    def _read(self, lines):
+        for line in self.proc.stdout:
+            lines.put(line.rstrip())
+        lines.put(f'[build finished, exit code {self.proc.wait()}]')
+
+    def alive(self):
+        return self.proc.poll() is None
+
+    def stop(self):
+        if self.alive():
+            try:
+                os.killpg(self.proc.pid, signal.SIGINT)
+            except ProcessLookupError:
+                pass
+
+
 class MapProcess:
     """`./buggy view MAP` as a child process (own process group, stopped with Ctrl+C semantics)."""
 
@@ -211,6 +281,11 @@ def run_gui():
     st.map('TButton', background=[('active', '#5A7FEA'), ('disabled', '#3A4F8F')])
     st.configure('Big.TButton', font=('TkDefaultFont', 13, 'bold'), padding=12)
     st.configure('TCheckbutton', background=BG, foreground=TEXT)
+    st.configure('TRadiobutton', background=BG, foreground=TEXT)
+    st.configure('TNotebook', background=BG)
+    st.configure('TNotebook.Tab', background=PANEL, foreground=TEXT, padding=(14, 6))
+    st.map('TNotebook.Tab', background=[('selected', ACCENT)])
+    st.configure('TFrame', background=BG)
     st.configure('Treeview', background=PANEL, fieldbackground=PANEL, foreground=TEXT, rowheight=26)
     st.configure('Treeview.Heading', background=ACCENT, foreground=TEXT)
     st.map('Treeview', background=[('selected', ACCENT)])
@@ -222,7 +297,14 @@ def run_gui():
     closing = {'on': False}
     clicks, lines = queue.Queue(), queue.Queue()
 
-    top = ttk.Frame(root)
+    nb = ttk.Notebook(root)
+    nb.pack(fill='both', expand=True)
+    tab_wp = ttk.Frame(nb)
+    tab_map = ttk.Frame(nb)
+    nb.add(tab_wp, text='  Waypoints  ')
+    nb.add(tab_map, text='  Build map from bag  ')
+
+    top = ttk.Frame(tab_wp)
     top.pack(fill='x', padx=14, pady=10)
     ttk.Label(top, text='Map').pack(side='left')
     map_var = tk.StringVar(value=maps[0] if maps else '')
@@ -233,9 +315,9 @@ def run_gui():
     close_btn = ttk.Button(top, text='Close map')
     close_btn.pack(side='left')
     status = tk.StringVar(value='Pick a map and click "Waypoint Set": the map opens in RViz.')
-    ttk.Label(root, textvariable=status, wraplength=940).pack(fill='x', padx=14)
+    ttk.Label(tab_wp, textvariable=status, wraplength=940).pack(fill='x', padx=14)
 
-    mid = ttk.Frame(root)
+    mid = ttk.Frame(tab_wp)
     mid.pack(fill='both', expand=True, padx=14, pady=8)
     left = ttk.Frame(mid)
     left.pack(side='left', fill='both', expand=True)
@@ -274,8 +356,140 @@ def run_gui():
     for b in (btn_up, btn_down, btn_wait, btn_del):
         b.pack(fill='x', pady=2)
 
-    log = tk.Text(root, height=9, bg='#101A40', fg='#cfd8ff', insertbackground='white')
+    log = tk.Text(tab_wp, height=9, bg='#101A40', fg='#cfd8ff', insertbackground='white')
     log.pack(fill='x', padx=14, pady=(0, 10))
+
+
+    # ---- tab 2: build a PCD map from a LiDAR bag -------------------------------------------------------
+    from tkinter import filedialog
+    blines = queue.Queue()
+    bstate = {'proc': None, 'info': None, 'auto_out': '', 'out': ''}
+    bag_var, out_var, scans_var = tk.StringVar(), tk.StringVar(), tk.StringVar()
+    gnss_var, rviz_var = tk.StringVar(value='without'), tk.BooleanVar(value=False)
+    closure_var = tk.BooleanVar(value=True)
+    binfo_var = tk.StringVar(value='Choose the bag folder (a rosbag2 folder with /velodyne_points).')
+    bstatus = tk.StringVar(value='')
+
+    r1 = ttk.Frame(tab_map)
+    r1.pack(fill='x', padx=14, pady=(12, 4))
+    ttk.Label(r1, text='Bag folder', width=14).pack(side='left')
+    bag_entry = ttk.Entry(r1, textvariable=bag_var)
+    bag_entry.pack(side='left', fill='x', expand=True, padx=6)
+    ttk.Button(r1, text='Browse...', command=lambda: browse_bag()).pack(side='left')
+    ttk.Label(tab_map, textvariable=binfo_var, wraplength=940).pack(fill='x', padx=14, pady=2)
+    r2 = ttk.Frame(tab_map)
+    r2.pack(fill='x', padx=14, pady=4)
+    ttk.Label(r2, text='Output folder', width=14).pack(side='left')
+    out_entry = ttk.Entry(r2, textvariable=out_var)
+    out_entry.pack(side='left', fill='x', expand=True, padx=6)
+    r3 = ttk.Frame(tab_map)
+    r3.pack(fill='x', padx=14, pady=4)
+    ttk.Label(r3, text='GNSS', width=14).pack(side='left')
+    rb_without = ttk.Radiobutton(r3, text='Without GNSS (LiDAR only)', variable=gnss_var, value='without')
+    rb_with = ttk.Radiobutton(r3, text='With GNSS (the bag has /chcnav/devpvt): map latitude / longitude / heading + drift check',
+                              variable=gnss_var, value='with')
+    rb_without.pack(side='left', padx=6)
+    rb_with.pack(side='left', padx=6)
+    r4 = ttk.Frame(tab_map)
+    r4.pack(fill='x', padx=14, pady=4)
+    ttk.Label(r4, text='Options', width=14).pack(side='left')
+    ttk.Checkbutton(r4, text='Open RViz when done (the build keeps running until you stop it)', variable=rviz_var).pack(side='left', padx=6)
+    ttk.Checkbutton(r4, text='Loop closure (the drive returns to its start)', variable=closure_var).pack(side='left', padx=6)
+    ttk.Label(r4, text='   first N scans only (test):').pack(side='left')
+    ttk.Entry(r4, textvariable=scans_var, width=7).pack(side='left', padx=6)
+    r5 = ttk.Frame(tab_map)
+    r5.pack(fill='x', padx=14, pady=8)
+    build_btn = ttk.Button(r5, text='Build map', style='Big.TButton')
+    build_btn.pack(side='left')
+    stop_build_btn = ttk.Button(r5, text='Stop')
+    stop_build_btn.pack(side='left', padx=8)
+    folder_btn = ttk.Button(r5, text='Open output folder')
+    folder_btn.pack(side='left')
+    ttk.Label(tab_map, textvariable=bstatus, wraplength=940).pack(fill='x', padx=14)
+    blog = tk.Text(tab_map, height=16, bg='#101A40', fg='#cfd8ff', insertbackground='white')
+    blog.pack(fill='both', expand=True, padx=14, pady=(4, 10))
+
+    def refresh_bag(*_):
+        info = bag_info(bag_var.get().strip())
+        bstate['info'] = info
+        if not info['ok']:
+            binfo_var.set(info['error'] if bag_var.get().strip() else 'Choose the bag folder (a rosbag2 folder with /velodyne_points).')
+            rb_with.state(['disabled'] if not info['gnss'] else ['!disabled'])
+            return
+        binfo_var.set(f"{info['seconds']:.0f} s, {info['lidar']} LiDAR scans, GNSS: "
+                      + (f"yes ({info['gnss']} messages on {GNSS_TOPIC})" if info['gnss'] else f'no ({GNSS_TOPIC} is not in the bag)'))
+        rb_with.state(['!disabled'] if info['gnss'] else ['disabled'])
+        gnss_var.set('with' if info['gnss'] else 'without')
+        auto = os.path.join(os.path.expanduser('~'), 'maps', os.path.basename(os.path.normpath(bag_var.get().strip())))
+        if out_var.get().strip() in ('', bstate['auto_out']):          # not changed by the user: follow the bag name
+            out_var.set(auto)
+        bstate['auto_out'] = auto
+
+    def browse_bag():
+        d = filedialog.askdirectory(initialdir=os.path.expanduser('~/bags'), title='Bag folder (rosbag2)')
+        if d:
+            bag_var.set(d)
+            refresh_bag()
+
+    bag_entry.bind('<FocusOut>', refresh_bag)
+    bag_entry.bind('<Return>', refresh_bag)
+
+    def start_build():
+        if bstate['proc'] and bstate['proc'].alive():
+            bstatus.set('A build is running already.')
+            return
+        refresh_bag()
+        info = bstate['info']
+        if not info or not info['ok']:
+            bstatus.set('Cannot build: ' + (info['error'] if info else 'choose a bag folder first'))
+            return
+        gnss = gnss_var.get() == 'with'
+        if gnss and not info['gnss']:
+            bstatus.set('The bag has no GNSS: choose "Without GNSS".')
+            return
+        try:
+            n = int(scans_var.get()) if scans_var.get().strip() else 0
+        except ValueError:
+            bstatus.set('"first N scans" must be a whole number (or empty = all).')
+            return
+        bstate['out'] = out_var.get().strip() or os.path.join(os.path.expanduser('~'), 'maps', os.path.basename(os.path.normpath(bag_var.get().strip())))
+        blog.delete('1.0', 'end')
+        cmd = build_command(bag_var.get().strip(), bstate['out'], gnss, rviz_var.get(), n, closure_var.get())
+        bstatus.set('Building ' + ('with GNSS' if gnss else 'without GNSS') + ' ... (a long bag takes minutes; the log shows the steps)')
+        build_btn.state(['disabled'])
+        bstate['proc'] = BuildProcess(cmd, blines)
+
+    def stop_build():
+        if bstate['proc'] and bstate['proc'].alive():
+            bstate['proc'].stop()
+            bstatus.set('Stopping ...')
+
+    def open_folder():
+        d = bstate['out'] or out_var.get().strip()
+        if d and os.path.isdir(d):
+            subprocess.Popen(['xdg-open', d], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        else:
+            bstatus.set('The output folder does not exist yet.')
+
+    build_btn.configure(command=start_build)
+    stop_build_btn.configure(command=stop_build)
+    folder_btn.configure(command=open_folder)
+
+    def poll_build():
+        try:
+            while True:
+                line = blines.get_nowait()
+                blog.insert('end', line + '\n')
+                blog.see('end')
+                if line.startswith('[build finished'):
+                    build_btn.state(['!disabled'])
+                    ok = line.endswith('code 0]')
+                    bstatus.set(('Done. ' if ok else 'The build failed or was stopped (see the log). ')
+                                + (f"Map: {bstate['out']}/*_map_flat.pcd. Next: draw the lanes in Vector Map Builder, then "
+                                   "./buggy add-map NAME FILE.osm --pcd FILE.pcd" if ok else ''))
+        except queue.Empty:
+            pass
+        root.after(200, poll_build)
 
     ros = RosLink(lambda src, x, y: clicks.put((src, x, y)), lambda: list(state['editor'].stops()) if state['editor'] else [])
 
@@ -403,6 +617,10 @@ def run_gui():
     refresh()
 
     def on_close():
+        if bstate['proc'] and bstate['proc'].alive():
+            if not messagebox.askyesno('Buggy Manager', 'A map build is running. Stop it and quit?'):
+                return
+            bstate['proc'].stop()
         if state['proc'] and state['proc'].alive():
             if not messagebox.askyesno('Buggy Manager', 'The map is still open. Close it and quit?'):
                 return
@@ -411,6 +629,7 @@ def run_gui():
 
     root.protocol('WM_DELETE_WINDOW', on_close)
     poll()
+    poll_build()
     root.mainloop()
 
 

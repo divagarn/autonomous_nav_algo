@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
 """Publishes a Lanelet2 .osm as a latched MarkerArray (/map/vector_map_marker).
 
-Reads local_x/local_y/ele tags straight from the XML - the non-georeferenced
+Reads local_x/local_y/ele tags straight from the XML (Local map) or lat/lon through map_projector_info.yaml
+(LocalCartesian map, see projection.py) - the non-georeferenced
 convention Autoware's Local projector and Vector Map Builder use (lat/lon are
 empty, so lanelet2.io.load() would collapse every point to the origin).
 Lanelet bounds are drawn white, centrelines (computed from left/right bound
@@ -10,6 +11,7 @@ midpoints) green.
 import xml.etree.ElementTree as ET
 
 import rclpy
+from buggy_pcd_lanelet_map.projection import Projector
 from geometry_msgs.msg import Point
 from rclpy.node import Node
 from rclpy.qos import DurabilityPolicy, QoSProfile, ReliabilityPolicy
@@ -18,12 +20,12 @@ from visualization_msgs.msg import Marker, MarkerArray
 
 def parse_osm(path):
     root = ET.parse(path).getroot()
+    proj = Projector.for_osm(path)
     nodes = {}
     for n in root.findall('node'):
-        tags = {t.get('k'): t.get('v') for t in n.findall('tag')}
-        if 'local_x' in tags and 'local_y' in tags:
-            nodes[n.get('id')] = (float(tags['local_x']), float(tags['local_y']),
-                                  float(tags.get('ele', 0.0)))
+        xyz = proj.node_xyz(n)
+        if xyz is not None:
+            nodes[n.get('id')] = xyz
     ways = {w.get('id'): [nodes[r.get('ref')] for r in w.findall('nd') if r.get('ref') in nodes]
             for w in root.findall('way')}
     lanelets = []

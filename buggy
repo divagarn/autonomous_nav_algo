@@ -27,6 +27,8 @@ buggy - PCD + Lanelet2 localisation, routing and AUTO driving for the buggy
   ./buggy can --status [IFACE]               show the CAN interface state
   ./buggy calibrate-brake [--preset 2|4] [--live]   measure the real stopping behaviour
   ./buggy add-map NAME FILE.osm [--pcd FILE.pcd]    create a map folder from a Vector Map Builder export
+  ./buggy map-from-bag BAG [OUT] [--gnss] [--no-closure] [--no-rviz]   build a PCD map from a LiDAR bag (--gnss: bag has /chcnav/devpvt;
+                                             --no-closure: the drive does not return to its start)
   ./buggy sim-map [--save]                   record a PCD of the Gazebo world (then --save)
   ./buggy params-check [FILE]                check config/buggy_params.yaml (or your own file) against the nodes
   ./buggy app                                Buggy Manager window: [Waypoint Set] opens the map, click home / A / B in RViz
@@ -55,6 +57,8 @@ live / replay options
   --mission      drive the stops of <map>/mission.yaml one after the other, wait at each (then ./buggy mission start)
   --params FILE  your own parameter YAML (only the keys you want to change); config/buggy_params.yaml holds all defaults
   --cpp          run the C++ runtime nodes (uart_writer, uart_bridge, wheel_odometry, lidar_preprocess, odom_to_twist, velodyne_static_tf, localization_manager, route_planner, avoidance_planner, segment_ground, self_hit_filter, lidar_obstacle_detector, operation_manager) from buggy_core
+  --gnss         automatic start pose from GNSS (/chcnav/devpvt) instead of the RViz click / --init; needs a georeferenced map
+                 (live: CHCNAV UDP driver on gnss_udp_port:=7531; replay: the bag's /chcnav/devpvt)
   --camera       camera detector (YOLOX 18 classes, + lane segmentation) fused with the radar; LiDAR obstacles get
                  a class name instead of "unknown" (detector_model:=<engine|onnx>  lane_model:=<engine|onnx>
                  camera_device:=/dev/video0  can_interface:=can0  radar_model:=umrra4|umrr9f  labeler_debug:=true)
@@ -218,7 +222,7 @@ case "$cmd" in
       case "$1" in
         --drive) DRIVE=1 ;; --real) REAL=1 ;; --init) ARGS+=("initial_pose:=$2"); shift ;;
         --no-rviz) ARGS+=(rviz:=false) ;; --no-detector) ARGS+=(obstacle_detection:=false) ;;
-        --radar) ARGS+=(radar:=true) ;; --camera) ARGS+=(camera:=true) ;;
+        --radar) ARGS+=(radar:=true) ;; --camera) ARGS+=(camera:=true) ;; --gnss) ARGS+=(gnss:=true) ;;
         --tracker) ARGS+=(radar_tracker:=$2); shift ;; --overlay) ARGS+=(overlay:=true) ;; --no-lane) ARGS+=(lane:=false) ;;
         --avoid) ARGS+=(avoidance:=true) ;; --no-avoid) ARGS+=(avoidance:=false) ;; --cpp) ARGS+=(core:=cpp) ;; --mission) ARGS+=(mission:=true) ;;
         --params) shift; [ -f "${1:-}" ] || { echo "--params needs an existing YAML file"; exit 1; }; ARGS+=("params:=$(realpath "$1")") ;;
@@ -273,6 +277,8 @@ PY
     done
     [ -n "$MAP" ] && ARGS+=("map_path:=$MAP")
     exec ros2 launch $PKG sim_live.launch.py "${ARGS[@]}" ;;
+
+  map-from-bag) exec bash "$HERE/tools/mapping/build_map_from_bag.sh" "$@" ;;
 
   sim-map)
     need_build

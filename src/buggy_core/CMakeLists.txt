@@ -31,6 +31,7 @@ find_package(yaml-cpp REQUIRED)
 find_package(PCL REQUIRED COMPONENTS common io)
 find_package(pcl_conversions REQUIRED)
 find_package(autoware_map_msgs REQUIRED)
+find_package(msg_interfaces REQUIRED)       # the GNSS message of the CHCNAV driver (/chcnav/devpvt)
 pkg_check_modules(TINYXML2 REQUIRED tinyxml2)
 
 # ---- pure C++ library (no ROS): easy to unit-test --------------------------------------------
@@ -51,8 +52,10 @@ add_library(buggy_core_lib SHARED
   src/planning/route_core.cpp
   src/planning/avoidance.cpp
   src/localization/localization_core.cpp
-  src/localization/lidar_preprocess.cpp)
-target_link_libraries(buggy_core_lib nlohmann_json::nlohmann_json ${TINYXML2_LIBRARIES})
+  src/localization/lidar_preprocess.cpp
+  src/localization/projection.cpp
+  src/localization/gnss_init_core.cpp)
+target_link_libraries(buggy_core_lib nlohmann_json::nlohmann_json ${TINYXML2_LIBRARIES} yaml-cpp)
 target_include_directories(buggy_core_lib PRIVATE ${TINYXML2_INCLUDE_DIRS})
 target_include_directories(buggy_core_lib PUBLIC
   $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
@@ -125,9 +128,13 @@ add_executable(mission_manager src/control/mission_manager_node.cpp)
 target_link_libraries(mission_manager buggy_core_lib)
 ament_target_dependencies(mission_manager rclcpp std_msgs nav_msgs geometry_msgs visualization_msgs tf2 tf2_ros)
 
+add_executable(gnss_pose_initializer src/localization/gnss_pose_initializer_node.cpp)
+target_link_libraries(gnss_pose_initializer buggy_core_lib)
+ament_target_dependencies(gnss_pose_initializer rclcpp std_msgs geometry_msgs msg_interfaces)
+
 install(TARGETS buggy_core_lib
   ARCHIVE DESTINATION lib LIBRARY DESTINATION lib RUNTIME DESTINATION bin)
-install(TARGETS uart_writer lidar_obstacle_detector operation_manager mission_manager
+install(TARGETS uart_writer lidar_obstacle_detector operation_manager mission_manager gnss_pose_initializer
   segment_ground self_hit_filter wheel_odometry route_planner avoidance_planner
   map_projection_loader pointcloud_map_loader
   localization_manager uart_bridge lidar_preprocess odom_to_twist velodyne_static_tf DESTINATION lib/${PROJECT_NAME})
@@ -178,6 +185,13 @@ if(BUILD_TESTING)
   target_link_libraries(test_detector_core buggy_core_lib)
   target_compile_definitions(test_detector_core PRIVATE
     GOLDEN_DIR="${CMAKE_CURRENT_SOURCE_DIR}/test/perception")
+  ament_add_gtest(test_projection test/localization/test_projection.cpp)
+  target_link_libraries(test_projection buggy_core_lib)
+  target_compile_definitions(test_projection PRIVATE
+    MAPS_DIR="${CMAKE_CURRENT_SOURCE_DIR}/../../data/maps"
+    TEST_DIR="${CMAKE_CURRENT_SOURCE_DIR}/test/planning")
+  ament_add_gtest(test_gnss_init test/localization/test_gnss_init.cpp)
+  target_link_libraries(test_gnss_init buggy_core_lib)
   ament_add_gtest(test_pcd_cells test/mapping/test_pcd_cells.cpp)
   target_link_libraries(test_pcd_cells buggy_core_lib)
   ament_add_gtest(test_mission_core test/control/test_mission_core.cpp)

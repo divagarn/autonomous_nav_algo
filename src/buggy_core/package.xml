@@ -33,6 +33,7 @@
   <depend>autoware_internal_debug_msgs</depend>
   <depend>autoware_internal_localization_msgs</depend>
   <depend>nlohmann-json-dev</depend>
+  <depend>msg_interfaces</depend>
 
   <test_depend>ament_cmake_gtest</test_depend>
 

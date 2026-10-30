@@ -1,0 +1,42 @@
+<launch>
+    <!-- GGA 接收节点：设备作为 TCP Server 发 GGA，ROS 作为 TCP Client 连接设备 -->
+    <node pkg="chcnav" exec="HcMsgParserLaunchNode" name="tcp_gga" output="screen">
+        <param name="type" value="tcp"/>
+        <param name="rate" value="1000"/>
+        <param name="host" value="192.168.45.100"/>    <!-- 设备 GGA server IP -->
+        <param name="port" value="9901"/>            <!-- 设备 GGA server 端口 -->
+        <param name="enable_read" value="true"/>
+        <param name="enable_write" value="false"/>
+    </node>
+
+    <!-- 差分下发节点：设备作为 TCP Client 连接 ROS，ROS 作为 TCP Server 发送差分 -->
+    <node pkg="chcnav" exec="HcMsgParserLaunchNode" name="tcp_diff" output="screen">
+        <param name="type" value="tcp_server"/>
+        <param name="rate" value="1000"/>
+        <param name="port" value="9902"/>            <!-- ROS 监听差分端口 -->
+        <param name="host" value="0.0.0.0"/>
+        <param name="enable_read" value="false"/>
+        <param name="enable_write" value="true"/>
+    </node>
+
+    <!-- hc_cgi_protocol_process_node -->
+    <node pkg="chcnav" exec="HcCgiProtocolProcessNode" name="hc_topic_driver" output="screen"/>
+
+    <!-- ntrip_server -->
+    <node pkg="chcnav" exec="NtripServerLaunchNode" name="ntrip_server" output="screen">
+        <param name="frame_id" value="tcp_gga"/>
+
+        <param name="login_type" value="third_cors"/>
+
+        <param name="host" value="119.3.136.126"/>
+        <param name="port" value="8002" type="str"/>
+        <param name="mountpoint" value="RTCM33"/>
+        <param name="username" value=""/>
+        <param name="password" value="" type="str"/>
+
+        <remap from="/differential_data" to="/write"/>
+        <remap from="/ntrip_source" to="/chcnav/nmea_sentence"/>
+    </node>
+
+</launch>
+

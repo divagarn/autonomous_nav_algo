@@ -1,5 +1,7 @@
 #include "buggy_core/planning/lanelet_map.hpp"
 
+#include "buggy_core/localization/projection.hpp"
+
 #include <cmath>
 #include <map>
 #include <stdexcept>
@@ -45,13 +47,23 @@ std::vector<Lanelet> load_lanelets(const std::string & path)
       }
       return t;
     };
+  // Local map: x, y from the local_x / local_y tags; georeferenced map (map_projector_info.yaml LocalCartesian) without
+  // those tags: from lat/lon like Autoware's projector does
+  const Projector proj = Projector::for_osm(path);
   std::map<std::string, Pt> nodes;
   for (XMLElement * n = root->FirstChildElement("node"); n; n = n->NextSiblingElement("node")) {
     const auto t = tags(n);
-    if (t.count("local_x")) {
-      const auto ele = t.find("ele");
-      nodes[n->Attribute("id")] = {std::stod(t.at("local_x")), std::stod(t.at("local_y")),
-        ele == t.end() ? 0.0 : std::stod(ele->second)};
+    const auto ele = t.find("ele");
+    const double z = ele == t.end() ? 0.0 : std::stod(ele->second);
+    const char * lat = n->Attribute("lat");
+    const char * lon = n->Attribute("lon");
+    // local_x / local_y first: Vector Map Builder writes them in the frame of the point cloud the lanes were drawn on,
+    // whatever origin it used for the latitude / longitude next to them. Only a node without them is placed from lat/lon.
+    if (t.count("local_x") && t.count("local_y")) {
+      nodes[n->Attribute("id")] = {std::stod(t.at("local_x")), std::stod(t.at("local_y")), z};
+    } else if (proj.georeferenced() && lat && lon && *lat && *lon) {
+      const auto xy = proj.to_xy(std::stod(lat), std::stod(lon));
+      nodes[n->Attribute("id")] = {xy.first, xy.second, z};
     }
   }
   std::map<std::string, std::vector<std::string>> ways;

@@ -66,3 +66,23 @@ def test_replace_keeps_the_order_and_move_delete_work():
 def test_empty_mission_is_reported_not_saved_as_valid():
     e = make_editor()
     assert e.problems() == ['no stops yet']
+
+
+def test_bag_info_reads_lidar_and_gnss_topics(tmp_path):
+    meta = ('rosbag2_bagfile_information:\n  duration: {nanoseconds: 12000000000}\n  topics_with_message_count:\n'
+            '  - {topic_metadata: {name: /velodyne_points}, message_count: 120}\n'
+            '  - {topic_metadata: {name: /chcnav/devpvt}, message_count: 600}\n')
+    (tmp_path / 'metadata.yaml').write_text(meta)
+    info = manager_app.bag_info(str(tmp_path))
+    assert info['ok'] and info['lidar'] == 120 and info['gnss'] == 600 and info['seconds'] == 12.0
+    (tmp_path / 'metadata.yaml').write_text(meta.replace('/velodyne_points', '/other'))
+    assert not manager_app.bag_info(str(tmp_path))['ok']
+    assert not manager_app.bag_info(str(tmp_path / 'missing'))['ok']
+
+
+def test_build_command_options():
+    c = manager_app.build_command('/b/bag', '/o/out', True, False, 250)
+    assert c[0] == 'bash' and c[1].endswith('tools/mapping/build_map_from_bag.sh')
+    assert c[2:] == ['/b/bag', '/o/out', '--gnss', '--no-rviz', '--max-scans', '250']
+    assert manager_app.build_command('/b/bag', '', False, True)[2:] == ['/b/bag']
+    assert manager_app.build_command('/b/bag', '', False, True, 0, False)[2:] == ['/b/bag', '--no-closure']

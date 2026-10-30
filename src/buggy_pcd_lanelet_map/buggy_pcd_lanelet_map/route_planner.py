@@ -27,13 +27,14 @@ Publishes (transient local):
   /planning/route_marker  visualization_msgs/MarkerArray (route lanelets,
                           centreline, goal arrow)
   /planning/home_marker   HOME disc + label
-Lanelet bounds are read from local_x/local_y tags like lanelet_marker_publisher.
+Lanelet bounds are read from local_x/local_y tags (Local map) or from lat/lon (LocalCartesian map, see projection.py).
 """
 import heapq
 import math
 import xml.etree.ElementTree as ET
 
 import rclpy
+from buggy_pcd_lanelet_map.projection import Projector
 from geometry_msgs.msg import Point, PoseStamped, PoseWithCovarianceStamped
 from nav_msgs.msg import Path
 from rclpy.node import Node
@@ -58,12 +59,12 @@ class Lanelet:
 
 def load_lanelets(path):
     root = ET.parse(path).getroot()
+    proj = Projector.for_osm(path)               # Local: local_x/local_y tags; LocalCartesian: from lat/lon
     nodes = {}
     for n in root.findall('node'):
-        t = {x.get('k'): x.get('v') for x in n.findall('tag')}
-        if 'local_x' in t:
-            nodes[n.get('id')] = (float(t['local_x']), float(t['local_y']),
-                                  float(t.get('ele', 0.0)))
+        xyz = proj.node_xyz(n)
+        if xyz is not None:
+            nodes[n.get('id')] = xyz
     ways = {w.get('id'): [r.get('ref') for r in w.findall('nd')] for w in root.findall('way')}
     out = []
     for rel in root.findall('relation'):

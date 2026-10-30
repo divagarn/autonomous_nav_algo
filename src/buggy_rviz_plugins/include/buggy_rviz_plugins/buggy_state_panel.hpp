@@ -36,6 +36,8 @@ private Q_SLOTS:
   void onClearRoute();
   void setMissionState(const QString & text);
   void checkMissionAlive();
+  void setGnssState(const QString & text);
+  void checkGnssAlive();
 
 private:
   void request(const QString & text);
@@ -65,14 +67,22 @@ private:
   QPushButton * mission_start_;
   QPushButton * mission_stop_;
   QPushButton * mission_resume_;
+  // GNSS auto start pose (gnss_pose_initializer, ./buggy live|replay --gnss): fix status + enable / disable button
+  QLabel * gnss_dot_;
+  QLabel * gnss_fix_label_;
+  QLabel * gnss_status_label_;
+  QPushButton * gnss_toggle_;
+  QTimer * gnss_timer_;
+  QElapsedTimer gnss_age_;
+  bool gnss_seen_{false};
   QTimer * mission_timer_;
   QElapsedTimer mission_age_;
   bool mission_seen_{false};
 
-  rclcpp::Subscription<std_msgs::msg::String>::SharedPtr state_sub_, mission_sub_;
+  rclcpp::Subscription<std_msgs::msg::String>::SharedPtr state_sub_, mission_sub_, gnss_sub_;
   rclcpp::Publisher<std_msgs::msg::String>::SharedPtr request_pub_;
   rclcpp::Publisher<std_msgs::msg::Empty>::SharedPtr clear_pub_;
-  rclcpp::Publisher<std_msgs::msg::String>::SharedPtr dummy_pub_, mission_pub_;
+  rclcpp::Publisher<std_msgs::msg::String>::SharedPtr dummy_pub_, mission_pub_, gnss_pub_;
 };
 
 }  // namespace buggy_rviz_plugins

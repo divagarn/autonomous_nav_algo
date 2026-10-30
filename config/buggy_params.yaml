@@ -223,6 +223,24 @@ mission_manager:
     auto_grace_sec: 3.0        # after the AUTO request, AUTO may take this long to turn on
     at_stop_radius: 4.0        # at start: already this close to a stop -> that stop counts as reached
 
+# ---------------------------------------------------------------- automatic start pose from GNSS (./buggy live|replay --gnss)
+# /chcnav/devpvt -> pose in the (georeferenced) map -> /initialpose -> NDT refines it. See README "Automatic localization with GNSS".
+gnss_pose_initializer:
+  ros__parameters:
+    enabled: true                   # false = starts switched off (the RViz button / /gnss_init/request enable turns it on)
+    accepted_states: [4]            # devpvt.stat[1]: 4 = RTK fixed with dual-antenna heading; add 5 for RTK float with heading
+    max_std_m: 0.3                  # horizontal position std must be at most this
+    stable_sec: 3.0                 # the fix must have been good this long without a break
+    fix_timeout_sec: 1.0            # a fix older than this counts as no fix
+    retry_sec: 20.0                 # wait this long for NDT before sending another start pose
+    max_attempts: 3                 # start poses per localization attempt (reset when it converges); then click 2D Pose Estimate
+    reinit_when_lost: true          # localization lost / align_failed: send a new start pose
+    lost_sec: 5.0                   # ... after it was lost this long
+    # measured with tools/mapping/gnss_georef.py on the bag t1 (2026-10-29): RMS GNSS vs LiDAR 0.68 m -> 0.10 m with these
+    gnss_to_rear_axle_x: 0.31       # m, vehicle frame x forward: from the GNSS position to the rear axle (the /chcnav/devpvt position is ~0.3 m behind it)
+    gnss_to_rear_axle_y: -0.01      # m, y left
+    heading_offset_deg: -3.24       # added to the GNSS heading (measured offset to the LiDAR heading, spread 0.2 deg)
+
 # ---------------------------------------------------------------- radar driver (umrr_ros2_driver, live --radar)
 # No node of this name runs: it is read by umrr_ros2_driver/launch/radar.launch.py (the ros__parameters
 # wrapper is needed because ROS parses every top-level key of this file). Pick the radar hardware with
